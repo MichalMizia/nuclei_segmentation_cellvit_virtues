@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.log
+*.sqlite3
+
+# --- Virtual Environments ---
+venv/
+.env/
+.env.bak/
+.venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# --- IDE / Editors ---
+.idea/
+*.iml
+
+# VSCode
+.vscode/
+.history/
+
+#Data
+data/*.csv
+data/*.npy
+data/*.sas
+data/*.npz
+
+grading_tests
