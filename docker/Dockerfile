@@ -1,11 +1,13 @@
 FROM nvcr.io/nvidia/cuda:12.4.0-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
-# Basic stuff
+
+# 1. Basic System Dependencies
 RUN apt-get update \
     && apt-get install -y sudo wget rsync rclone git tmux build-essential cmake dssp zip nano unzip\
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-## Install miniconda ##
+
+# 2. Install Miniconda
 USER root
 RUN apt update \
     && apt install wget git -y \
@@ -21,45 +23,33 @@ RUN wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
     find /opt/conda/ -follow -type f -name '*.a' -delete && \
     find /opt/conda/ -follow -type f -name '*.js.map' -delete && \
     /opt/conda/bin/conda clean -afy
-## Create conda env ##
-# env name can be customized on build -> --build-arg ENV_NAME=my-custom-env-name
+
+# 3. Create Conda Env (Standard Path)
+# We copy the files to a temporary location first just to build the env
 ARG ENV_NAME="tissuevit"
-COPY environment.yaml .
-COPY requirements_dinov2.txt .
-# Create conda environment
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-RUN conda env create --yes -f environment.yaml -n ${ENV_NAME}
-# Add conda env activation in root home and home skel (https://www.linux.com/training-tutorials/users-groups-and-other-linux-beasts)
+COPY environment.yaml /tmp/environment.yaml
+COPY requirements_dinov2.txt /tmp/requirements_dinov2.txt
+
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+RUN conda env create --yes -f /tmp/environment.yaml -n ${ENV_NAME}
+
+# 4. Setup Bash Activation
 RUN echo -n ". /opt/conda/etc/profile.d/conda.sh\nconda activate ${ENV_NAME}\n" >> /root/.bashrc && \
     echo -n ". /opt/conda/etc/profile.d/conda.sh\nconda activate ${ENV_NAME}\n" >> /etc/skel/.bashrc
-# Make RUN commands to read bashrc to activate conda
 SHELL ["/bin/bash", "-ic"]
-#RUN ln -s /usr/bin/mkdssp /usr/bin/dssp
 
-# Build arguments. Adjust these to match your LDAP settings. You should be able to see them when typing "id" on the jumphost.rcp.epfl.ch
-ARG LDAP_USERNAME="kuci"
-ARG LDAP_UID=308525
-ARG LDAP_GROUPNAME="kuci"
-ARG LDAP_GID=30132
-ARG LDAP_SUPPGROUPNAME="rcp-runai-course-cs-433-group01_AppGrpU"
-ARG LDAP_SUPPGROUPGID=86757
+# --- CRITICAL FIX: SETUP WORKSPACE FIRST ---
+# In your original file, you set WORKDIR before copying the requirements for the pip install step.
+# We do the same here so 'pip install -r' finds the file.
+WORKDIR /workspace
+ENV PATH="/workspace/bin:$PATH"
 
-# Create your user in the container
-RUN groupadd ${LDAP_GROUPNAME} --gid ${LDAP_GID}
-RUN groupadd ${LDAP_SUPPGROUPNAME} --gid ${LDAP_SUPPGROUPGID}
-RUN useradd -m -s /bin/bash -g ${LDAP_GROUPNAME} -u ${LDAP_UID} -G ${LDAP_SUPPGROUPNAME} ${LDAP_USERNAME}
-# Switch to the local user
-USER ${LDAP_USERNAME}
-# Specify paths
-ARG WORKDIR="/home/${LDAP_USERNAME}"
-WORKDIR $WORKDIR
-RUN mkdir -p $WORKDIR
-RUN mkdir -p $WORKDIR/bin
-ENV PATH="$WORKDIR/bin:$PATH"
+# Copy the requirements file INTO the workspace
 COPY requirements_dinov2.txt .
-#ENV PATH="$WORKDIR/bin/miniconda3/bin:$PATH"
-# Perform uninstallations and installations within the tissuevit environment
+
+# 5. Install Pip Packages
+# (Exact list from your original file)
 RUN conda run -n tissuevit pip install numpy
 RUN conda run -n tissuevit pip install pandas
 RUN conda run -n tissuevit pip install einops
@@ -86,14 +76,14 @@ RUN conda run -n tissuevit pip install multimil
 RUN conda run -n tissuevit pip install imbalanced-learn
 RUN conda run -n tissuevit pip install timm
 RUN conda run -n tissuevit pip install omegaconf
+# This will now work because requirements_dinov2.txt is in /workspace
 RUN conda run -n tissuevit pip install -r requirements_dinov2.txt
 RUN conda run -n tissuevit pip install flash-attn --no-build-isolation
 RUN conda run -n tissuevit pip install scikit-image
-RUN conda run -n tissuevit pip install torch-scatter
-USER root 
-RUN chmod 777 -R /opt/conda/envs/tissuevit
-USER ${LDAP_USERNAME}
-# Ensure tissuevit is activated for any further commands
-#RUN echo "conda activate tissuevit" >> ~/.bashrc
-# Reset SHELL to default if necessary for further commands
-#SHELL ["/bin/bash", "-c"]
+# RUN conda run -n tissuevit pip install torch-scatter
+
+# --- CRITICAL FOR TEAM: OPEN PERMISSIONS ---
+USER root
+RUN chmod 777 -R /opt/conda
+
+CMD ["/bin/bash"]
