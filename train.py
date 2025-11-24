@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+import os
 
 from config import TEST_DATA  # breast_tissue_crop.png lives here
 
@@ -63,6 +64,10 @@ def run_cellvit_on_wsi(wsi_path: Path):
 
     print("[INFO] Running CellViT with command:")
     print(" ".join(cmd))
+
+    env = os.environ.copy()
+    env["RAY_OBJECT_STORE_ALLOW_SLOW_STORAGE"] = "1"
+
 
     subprocess.run(cmd, check=True)
 
