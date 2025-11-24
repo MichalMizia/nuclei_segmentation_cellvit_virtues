@@ -11,12 +11,12 @@ def ensure_pyramidal_tiff(png_path: Path) -> Path:
 
     Uses pyvips (no sudo needed).
     """
-    import pyvips  # requires: pip install pyvips
+    import pyvips  # requires: pip install pyvips + conda install -c conda-forge libvips
 
     png_path = png_path.resolve()
-    tiff_path = png_path.with_suffix("_pyramidal.tiff")
+    # ✅ this is the correct way: change the *name*, not the suffix
+    tiff_path = png_path.with_name(png_path.stem + "_pyramidal.tiff")
 
-    # If we already converted it once, don't redo
     if tiff_path.exists():
         print(f"[INFO] Pyramidal TIFF already exists: {tiff_path}")
         return tiff_path
@@ -36,7 +36,6 @@ def ensure_pyramidal_tiff(png_path: Path) -> Path:
 
     print(f"[INFO] Saved pyramidal TIFF: {tiff_path}")
     return tiff_path
-
 
 def run_cellvit_on_wsi(wsi_path: Path):
     """
