@@ -36,4 +36,7 @@ data/*.npy
 data/*.sas
 data/*.npz
 
+data
+
+
 grading_tests
