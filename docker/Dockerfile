@@ -1,31 +1,22 @@
+# 1. Base Image
 FROM nvcr.io/nvidia/cuda:12.4.0-devel-ubuntu22.04
+ARG TARGETPLATFORM=linux/amd64
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Basic System Dependencies
-RUN apt-get update \
-    && apt-get install -y sudo wget rsync rclone git tmux build-essential cmake dssp zip nano unzip\
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# 2. System Dependencies
+RUN apt-get update && apt-get install -y \
+    sudo wget rsync rclone git tmux build-essential cmake dssp zip nano unzip ffmpeg libsm6 libxext6 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Install Miniconda
+# 3. Miniconda
 USER root
-RUN apt update \
-    && apt install wget git -y \
-    && apt autoremove -y \
-    && apt clean \
-    && rm -rf /var/lib/apt/lists
 ENV PATH=/opt/conda/bin:$PATH
 RUN wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" -O miniconda.sh -q && \
-    mkdir -p /opt && \
     bash miniconda.sh -b -p /opt/conda && \
     rm miniconda.sh && \
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    find /opt/conda/ -follow -type f -name '*.a' -delete && \
-    find /opt/conda/ -follow -type f -name '*.js.map' -delete && \
     /opt/conda/bin/conda clean -afy
 
-# 3. Create Conda Env (Standard Path)
-# We copy the files to a temporary location first just to build the env
+# 4. Create Conda Environment
 ARG ENV_NAME="tissuevit"
 COPY environment.yaml /tmp/environment.yaml
 COPY requirements_dinov2.txt /tmp/requirements_dinov2.txt
@@ -34,55 +25,40 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
 RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
 RUN conda env create --yes -f /tmp/environment.yaml -n ${ENV_NAME}
 
-# 4. Setup Bash Activation
-RUN echo -n ". /opt/conda/etc/profile.d/conda.sh\nconda activate ${ENV_NAME}\n" >> /root/.bashrc && \
-    echo -n ". /opt/conda/etc/profile.d/conda.sh\nconda activate ${ENV_NAME}\n" >> /etc/skel/.bashrc
-SHELL ["/bin/bash", "-ic"]
+# Setup Shell to use Conda automatically
+RUN echo "source /opt/conda/bin/activate ${ENV_NAME}" >> /root/.bashrc
+SHELL ["/bin/bash", "-c"]
 
-# --- CRITICAL FIX: SETUP WORKSPACE FIRST ---
-# In your original file, you set WORKDIR before copying the requirements for the pip install step.
-# We do the same here so 'pip install -r' finds the file.
+# 5. Workspace Setup
 WORKDIR /workspace
 ENV PATH="/workspace/bin:$PATH"
-
-# Copy the requirements file INTO the workspace
 COPY requirements_dinov2.txt .
 
-# 5. Install Pip Packages
-# (Exact list from your original file)
-RUN conda run -n tissuevit pip install numpy
-RUN conda run -n tissuevit pip install pandas
-RUN conda run -n tissuevit pip install einops
-RUN conda run -n tissuevit pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-RUN conda run -n tissuevit pip install biopython
-RUN conda run -n tissuevit pip install h5py
-RUN conda run -n tissuevit pip install fair-esm
-RUN conda run -n tissuevit pip install readimc
-RUN conda run -n tissuevit pip3 install -U scikit-learn
-RUN conda run -n tissuevit pip install -U matplotlib
-RUN conda run -n tissuevit pip install seaborn
-RUN conda run -n tissuevit pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu124
-RUN conda run -n tissuevit pip install wandb
-RUN conda run -n tissuevit pip install tifffile
-RUN conda run -n tissuevit pip install pillow
-RUN conda run -n tissuevit pip install umap-learn
-RUN conda run -n tissuevit pip install ipython
-RUN conda run -n tissuevit pip install notebook
-RUN conda run -n tissuevit pip install ipywidgets
-RUN conda run -n tissuevit pip install POT
-RUN conda run -n tissuevit pip install loguru
-RUN conda run -n tissuevit pip install transformers
-RUN conda run -n tissuevit pip install multimil
-RUN conda run -n tissuevit pip install imbalanced-learn
-RUN conda run -n tissuevit pip install timm
-RUN conda run -n tissuevit pip install omegaconf
-# This will now work because requirements_dinov2.txt is in /workspace
-RUN conda run -n tissuevit pip install -r requirements_dinov2.txt
-RUN conda run -n tissuevit pip install flash-attn --no-build-isolation
-RUN conda run -n tissuevit pip install scikit-image
-# RUN conda run -n tissuevit pip install torch-scatter
+# --- SAFE INSTALLATION BLOCKS ---
 
-# --- CRITICAL FOR TEAM: OPEN PERMISSIONS ---
+# BLOCK A: Install PyTorch & Xformers (The Heavy Downloads)
+# We do this first because it takes the longest and changes the least.
+RUN source /opt/conda/bin/activate tissuevit && \
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124 && \
+    pip install --no-cache-dir xformers --index-url https://download.pytorch.org/whl/cu124
+
+# BLOCK B: Install Standard Libraries (Fast)
+# These are standard packages that rarely fail.
+RUN source /opt/conda/bin/activate tissuevit && \
+    pip install --no-cache-dir \
+    numpy pandas einops biopython h5py fair-esm readimc \
+    scikit-learn matplotlib seaborn wandb tifffile pillow \
+    umap-learn ipython notebook ipywidgets POT loguru transformers \
+    multimil imbalanced-learn timm omegaconf scikit-image
+
+# BLOCK C: Install The "Problem Children" (Slow/Complex)
+# flash-attn compiles from source and often breaks memory limits. We isolate it.
+# We also run the requirements file here.
+RUN source /opt/conda/bin/activate tissuevit && \
+    pip install --no-cache-dir flash-attn --no-build-isolation && \
+    pip install --no-cache-dir -r requirements_dinov2.txt
+
+# 6. Final Permissions
 USER root
 RUN chmod 777 -R /opt/conda
 
