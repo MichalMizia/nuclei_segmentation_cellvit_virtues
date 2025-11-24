@@ -68,8 +68,7 @@ def run_cellvit_on_wsi(wsi_path: Path):
     env = os.environ.copy()
     env["RAY_OBJECT_STORE_ALLOW_SLOW_STORAGE"] = "1"
 
-
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, env=env)
 
     print(f"[INFO] CellViT finished. Outputs in: {outdir}")
 
