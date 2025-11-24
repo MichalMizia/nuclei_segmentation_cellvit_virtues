@@ -30,8 +30,7 @@ def main():
 
     # 2. Init inference engine (this will download weights if needed)
     inference_runner = CellViTInference(
-        model_name=model_name,
-        gpu=gpu_id,
+        model_name=model_name
     )
 
     # 3. Run inference on the PNG
