@@ -68,11 +68,13 @@ In the local bash having activated tissuevit:
 You can run this from whatever place you like (I suggest from data so you have the benedict code).
 
 ```bash
-
+# On server CLI the one with I have no name!@tissuevit-full-0-3
 jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
 
 # On another terminal Not inside your server but local:
 kubectl port-forward -n runai-course-cs-433-group01-kuci tissuevit-full-0-1 8888:8888
+
+# Then go back to the server CLI and click the link with the token, it should open in your browser.
 
 # Register the kernel for jupyter. (Run this inide the server CLI)
 source /opt/conda/bin/activate tissuevit
