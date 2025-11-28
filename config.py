@@ -14,6 +14,16 @@ else:
 # Data directories
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 
+#Orion Subset
+ORION_SUBSET_DIR = "/data/virtues_orion_dataset/virtues_example/orion_subset"
+
 #Test data
 TEST_DATA = os.path.join(DATA_DIR, "breast_tissue_crop.png")
 
+#Resources
+RESOURCES_DIR = os.path.join(ROOT_DIR, "resources")
+IMAGE_DIR = os.path.join(RESOURCES_DIR, "images")
+
+
+#Virtues weights
+VIRTUES_WEIGHTS_PATH = "/data/virtues_orion_dataset/virtues_example/virtues_weights"
