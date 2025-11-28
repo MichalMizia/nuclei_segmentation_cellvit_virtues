@@ -2,18 +2,46 @@
 
 ---
 
-## 1. Connect to the pod and clone the repository 
+## 1. Push the image
 
 ```bash
+runai submit `                                                                      
+>>   --project course-cs-433-group01-[CHANGE TO YOURS] `
+>>   --name tissuevit-full `
+>>   -i registry.rcp.epfl.ch/jon-docker/tissuevit:v1.1 `
+>>   --run-as-uid [CHANGE TO YOURS] `
+>>   --run-as-gid [CHANGE TO YOURS] `
+>>   -g 1 `
+>>   --interactive `                                                                                                                                                                
+>>   --existing-pvc claimname=course-cs-433-group01-scratch,path=/data `                                                                                                   
+>>   -- sleep infinity 
+
+```
+
+
+
+## 2. Connect to the pod and clone the repository 
+
+```bash
+
+kubectl get pods -n runai-course-cs-433-group01-kuci
+
+# After getting the pods connect to bash using the pod name which is usually workload-0-X.
+
 kubectl exec -it -n runai-course-cs-433-group01-kuci tissuevit-full-0-0 -- /bin/bash
 
 cd /data
-mkdir -p code
 cd code
 ```
 
-Clone the repo if not already there.
+## 3. Clone the repo if not already there.
+
+Make your own repo there for ease of use.
+
 ```bash
+mkdir jon[your name]
+cd jon
+
 git clone https://<Personal Github Token>@github.com/CS-433/project-2-gradient_tri_scent.git
 git config --global --add safe.directory /data/code/project-2-gradient_tri_scent
 
@@ -24,68 +52,69 @@ Replace `<Personal Github Token>` with your actual GitHub personal access token.
 
 ---
 
-## 2. Run CellViT
-
-Place your input images / WSIs inside the data/ folder of this repository, for example:
+## 4. Run a python file
 
 ```bash
-/data/code/project-2-gradient_tri_scent/data/breast_tissue_crop.png
-```
-The train.py script expects the test image path to live under data/ (configured via config.py).
 
----
-
-## 2. Activate the tissuevit environment
-
-```bash
 source /opt/conda/bin/activate tissuevit
+
+python the file_you_want.py
+
 ```
 
-The `tissuevit` environment includes:
+## 4. Set up jupyter
 
-- PyTorch with GPU support  
-- `cellvit` (CellViT-Inference)  
-- `openslide-python` and `openslide-bin`  
-- `pyvips` and `libvips` (for WSI-compatible TIFFs)
-
-If the cellvit is not there install with pip install cellvit.
-
----
-
-
-## 3. Run CellViT
-
-The `train.py` script:
-
-- Takes an input slide (or WSI-compatible TIFF)  
-- Invokes `cellvit-inference` with:  
-  - `--model SAM`  
-  - `--nuclei_taxonomy pannuke`  
-  - `--gpu 0`  
-- Runs **CellViT-SAM-H** on the slide  
-- Writes outputs to: `/data/cellvit_out`
-
-Run it:
+In the local bash having activated tissuevit:
+You can run this from whatever place you like (I suggest from data so you have the benedict code).
 
 ```bash
-python train.py
+# On server CLI the one with I have no name!@tissuevit-full-0-3
+jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+
+# On another terminal Not inside your server but local:
+kubectl port-forward -n runai-course-cs-433-group01-kuci tissuevit-full-0-1 8888:8888
+
+# Then go back to the server CLI and click the link with the token, it should open in your browser.
+
+# Register the kernel for jupyter. (Run this inide the server CLI)
+source /opt/conda/bin/activate tissuevit
+python -m ipykernel install --user --name tissuevit --display-name "tissuevit"
+
 ```
 
-Run any other script:
+# If you want to set up VSCode
+Donwside cause you need to do these each time you restart the server.
 
 ```bash
-python the_file_that_you_want_to.py
+
+cd /data/vscode
+./code tunnel
+
+3. Connect from your Laptop
+	1. Open VS Code on Windows.
+	2. Install the extension: Remote - Tunnels (by Microsoft).
+	3. Click the green >< icon (bottom left) -> Connect to Tunnel...
+Select GitHub -> Select runai-gpu. [the name that you gave it]
+
+
 ```
 
----
+# Notebook issue with benedicts code:
 
-## 4. Outputs
-
-CellViT results (tables, logs, GeoJSONs if enabled) are stored in:
-
+Happens when cuda libraries dont match, just run the comands bellow inside tissuevit enviroment.
 ```bash
-ls /data/cellvit_out
+
+pip uninstall -y flash-attn torch torchvision torchaudio xformers
+pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+pip install flash-attn --no-build-isolation --no-cache-dir
+pip install xformers --index-url https://download.pytorch.org/whl/cu124
+
+
+OR
+
+pip uninstall -y flash-attn torch torchvision torchaudio xformers && pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124 && pip install flash-attn --no-build-isolation --no-cache-dir && pip install xformers --index-url https://download.pytorch.org/whl/cu124
+
+
 ```
 
-Inspect using `ls`, `head`, or a small Python script.
 
