@@ -1,0 +1,8 @@
+name: mmvirtues
+channels:
+  - anaconda
+  - defaults
+dependencies:
+  - python=3.12 #fied
+  - pip
+  - git
