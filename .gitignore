@@ -11,6 +11,7 @@ build/
 .eggs/
 *.log
 *.sqlite3
+.idea
 
 # --- Virtual Environments ---
 venv/
