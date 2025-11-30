@@ -1,8 +1,8 @@
 import os
 from src.utils.utils import setup_wandb_and_config, set_seed, init_rnd_seeds, is_rank0, load_checkpoint_safetensors
 from src.utils.training_utils import to_device
-from src.data.datasets.mm_base import build_mm_datasets
-from src.data.datasets.mae_dataset import MAEDataset, ExactAlignmentMAEDataset
+from src.dataset.datasets.mm_base import build_mm_datasets
+from src.dataset.datasets.mae_dataset import MAEDataset, ExactAlignmentMAEDataset
 from src.modules.flex_dual_virtues.flex_dual_virtues_new_init import build_flex_dual_virtues
 from src.utils.marker_utils import load_marker_embeddings
 from torch.utils.data import random_split

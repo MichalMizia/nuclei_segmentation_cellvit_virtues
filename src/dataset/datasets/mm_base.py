@@ -2,8 +2,8 @@ import os
 from src.utils.utils import is_rank0
 import numpy as np
 import pandas as pd
-from src.data.datasets.he_base import HEDataset
-from src.data.datasets.multiplex_base import MultiplexDataset
+from src.dataset.datasets.he_base import HEDataset
+from src.dataset.datasets.multiplex_base import MultiplexDataset
 from multiprocessing import Pool
 from tqdm import tqdm
 from loguru import logger

@@ -1,7 +1,7 @@
 import os
 import torch
 import numpy as np
-from src.data.datasets.imaging_dataset import ImagingDataset
+from src.dataset.datasets.imaging_dataset import ImagingDataset
 from einops import rearrange
 from PIL import Image
 from einops import rearrange

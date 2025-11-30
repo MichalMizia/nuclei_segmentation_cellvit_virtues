@@ -2,7 +2,7 @@ import os
 from glob import glob
 import numpy as np
 import pandas as pd
-from src.data.datasets.imaging_dataset import ImagingDataset
+from src.dataset.datasets.imaging_dataset import ImagingDataset
 from src.utils.marker_utils import load_marker_embedding_dict
 from src.utils.transform_utils import CustomGaussianBlur, custom_median_filter
 from src.utils.normalize_utils import get_normalize_metadata
