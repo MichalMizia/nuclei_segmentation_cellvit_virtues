@@ -39,3 +39,5 @@ data/*.npz
 data
 
 specification
+
+notebooks/checkpoints/*.pth

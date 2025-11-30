@@ -15,7 +15,7 @@ def ensure_pyramidal_tiff(png_path: Path) -> Path:
     import pyvips  # requires: pip install pyvips + conda install -c conda-forge libvips
 
     png_path = png_path.resolve()
-    # ✅ this is the correct way: change the *name*, not the suffix
+    #  this is the correct way: change the *name*, not the suffix
     tiff_path = png_path.with_name(png_path.stem + "_pyramidal.tiff")
 
     if tiff_path.exists():
@@ -80,7 +80,7 @@ def main():
 
     print(f"[INFO] Using input image: {png_path}")
 
-    # 1) Convert PNG to pyramidal TIFF (if needed)
+    # 1) Convert PNG to pyramidal TIFF 
     wsi_path = ensure_pyramidal_tiff(png_path)
 
     # 2) Run CellViT inference via CLI
