@@ -88,10 +88,13 @@ class CombinedLoss(nn.Module):
     """
     Combined Cross Entropy and Dice Loss.
     """
-    def __init__(self, num_classes, alpha=0.5, ignore_index=None):
+    def __init__(self, num_classes, alpha=0.5, ignore_index=None, class_weights=None):
         super().__init__()
         self.alpha = alpha
-        self.ce = nn.CrossEntropyLoss(ignore_index=ignore_index if ignore_index is not None else -100)
+        self.ce = nn.CrossEntropyLoss(
+            weight=class_weights, 
+            ignore_index=ignore_index if ignore_index is not None else -100
+        )
         self.dice = DiceLoss(num_classes, ignore_index=ignore_index)
         
     def forward(self, logits, targets):
