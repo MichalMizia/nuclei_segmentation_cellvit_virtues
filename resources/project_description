@@ -1,0 +1,36 @@
+For this ML4Science project you will work, as we discussed, on single cell segmentation for microscopy data. In specific the task will be split in three phases:
+
+Apply a pretrained CellViT model to H&E Lightmicroscopy slides and get used to the data, segmentation models, and their evaluation. 
+Train a CellViT model with the VirTues foundation model as the backbone on Spatial Proteomics (SP) data but from the exact same registered tissue slides as in task 1.
+Advance the model from task 2 by either ideas from other segmentation methods like SAM or specific deterministic SP segmentation methods or implement your own ideas.
+
+During the project we will see how far you will come. For the data @Benedikt Edler Von Querfurth will contact you three next week. Until then, you can contact RCP to ask for student project access (as discussed with Michal today) and read into the topic to get familiar with the data modalities, segmentation in general and specific methods like SAM or Cell-ViT.
+
+Here is a small reading/watching list for you:
+
+Lightmicroscopy and H&E (Good video but you just need to know the general idea, not the details)
+Spatial Proteomics, in specific multiplex immunofluorescence (the method used to generate the “images", again, just get the general idea) 
+Deep learning-based Image Segmentation
+
+Papers to read:
+U-Net: https://arxiv.org/abs/1505.04597
+CellViT: https://arxiv.org/abs/2306.15350
+SAM: https://arxiv.org/abs/2304.02643
+
+Best regards and much fun with your project,
+
+
+
+
+_________________________________________
+
+
+First of all, apologies for the delay and thanks for handling the RCP stuff and adding me to your cs-433 RCP group. This really helped me handing you over the data and the VirTues code.
+I hope you are doing well and setting up RCP worked for you without any large hurdles and you could already start doing some cell segmentation on your end.
+
+I finally got all the data and the VirTues code prepared for you and moved it to a new folder in your scratch workspace, namely "virtues_orion_dataset".
+I prepared a toy example for you how to load VirTues, how to load the multi-modal dataset and how to infer a multiplex sample with VirTues in the virtues_inference_example.ipynb notebook. Feel free to try it and explore the VirTues architecture code a bit! Ultimately, you might want to understand what these patch summary tokens (pss) are and how they interact with the different channel tokens within the VirTues encoder. For more information, you can also take a look into the paper (https://arxiv.org/abs/2501.06039) or ask a LLM about the structure of VirTues (https://deepwiki.com/bunnelab/virtues).
+
+Note that in the dataset, I have generated two different segmentation masks- one with more coarse cell types, one with more fine-granular ones. I have always used the "broad_cell_type" one when playing around with CellViT for multiplex images. The "labelencoder_*.npy" will tell you the mapping between integers and cell types.
+
+If you have any further questions, feel free to reach out to me!
