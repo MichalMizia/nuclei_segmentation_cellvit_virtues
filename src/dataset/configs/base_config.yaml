@@ -1,0 +1,101 @@
+dataset_config: null
+additional_config: null
+
+marker_embedding_dir: /datasets/marker_embeddings/esm2_t30_150M_UR50D
+
+experiment:
+  name: null
+  dir: /outputs 
+  log_dir: logs
+  checkpoint_dir: checkpoints
+  wandb_entity: mmVirtues
+  wandb_project: mmVirtues_May2025
+  wandb_run_id: null
+  wandb_mode: online
+
+datasets: null # This is a placeholder for the datasets indicated in seperate run configs
+
+training:
+  epochs: 100
+  batch_size: 8
+  resume: false
+  lr_base: 0.0001
+  lr_base_end: 0.000001
+  weight_decay: 0.04
+  weight_decay_end: 0.4
+  warmup_epochs: 10
+  fp16: true
+  bf16: false
+  predict_all: true
+  alpha_fft: 0.0
+  grad_accumulation: 8
+  seed: 42
+  eval_during_training: false
+  eval_freq: 1
+  patch_eval_freq: 100
+  crop_eval_freq: 200
+  final_eval: false
+  num_workers: 10
+  save_embeddings: true
+  clip_grad: 1.0
+  effective_batch_size: 128
+  lr: 0.0002
+  lr_end: 0.000002
+  lr_scheduler_type: cosine
+  loss_to_use: DualMAELoss
+  evaluate_dataset_wise: false
+  eval_boost: 4
+  train_on_aligned: false
+  disable_eval: true
+
+logistic:
+  balance_classes: balanced
+
+model:
+  model_dim: 512
+  feedforward_dim: 1024
+  encoder_pattern: hvhvhvhvhvhvhvhv
+  num_encoder_heads: 8
+  num_decoder_heads: 8
+  num_decoder_hidden_layers: 0 
+  pos_emb: rope
+  backbone_size: base
+  decoder_pattern: ffff
+  num_hidden_layers_head: 0
+  extra_patch_summary: true
+  use_only_patch_summary_for_decoder: true
+  dropout: 0.0
+  joint_patch_encoder: false
+  separate_encoders: false
+  separate_encoder_pattern_he: hhhh
+  separate_encoder_pattern_multiplex: hvhv
+  separate_decoders: false
+
+image_info:
+  rnd_crop_size: 256
+  patch_size: 8
+  use_rnd_crop_dir: true
+  use_fraction_training: 1.0
+  image_section_size: [128, 128]
+  mask_ratio: [0.6, 1.0]
+  mask_strategy: uniform_independent
+  channel_fraction: [0.75, 1.0]
+  num_channels_to_full_mask: null
+  num_channels_to_keep: null
+  num_global_crops: 1
+  stride: null
+  crop_strategy: random_crops
+  normalization: q_99
+  use_fixed_drop_range: false
+
+inpainting:
+  mask_strategy: identity
+  update_strategy: identity
+  track: true
+  track_freq: 5
+
+masking:
+  update_strategy: identity
+  initial_ratio: [0.3, 0.4]
+  final_ratio: [0.6, 1.0]
+  epoch_threshold: null

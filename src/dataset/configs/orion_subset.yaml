@@ -1,0 +1,10 @@
+datasets:
+  orion_subset:
+    name: orion
+    path: /data/virtues_orion_dataset/virtues_example/orion_subset
+    modalities:
+      - cycif
+      - he
+
+    load_mask: true
+    mask_type: broad_cell_type
