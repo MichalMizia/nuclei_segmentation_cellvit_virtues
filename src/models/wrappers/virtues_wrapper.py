@@ -42,6 +42,9 @@ class VirtuesWrapper:
         ds: MultimodalDataset,
         unimodal_ds: str = "cycif",
         include_he_data: bool = False,
+        include_cycif_data: bool = True,
+        return_intermediates: bool = False,
+        intermediate_layers: list[int] = [4, 8, 12],
     ):
         """"""
         patch_size = 8  # virtues patch size
@@ -53,6 +56,11 @@ class VirtuesWrapper:
         channels = channels.to(self.device)
         channels_list = [channels.clone().detach() for _ in range(batch_size)]
 
+        if not include_cycif_data and not include_he_data:
+            raise ValueError(
+                "At least one of include_cycif_data or include_he_data must be True"
+            )
+
         print("=" * 40)
         print(f"Dataset '{unimodal_ds}' with {len(tissue_ids)} tissues".center(40))
         print(f"No. of patches {batch_size}".center(40))
@@ -61,11 +69,15 @@ class VirtuesWrapper:
         print("=" * 40)
 
         for tid in tissue_ids:
-            tissue = ds.unimodal_datasets["cycif"].get_tissue(tid)  # (C, H, W)
-            tissue_list = self._image_to_patches(
-                tissue, patch_size=patch_size
-            )  # list of (C, P, P)
-            tissue_list = [t.to(self.device) for t in tissue_list]
+            if include_cycif_data:
+                cycif = ds.unimodal_datasets["cycif"].get_tissue(tid)  # (C, H, W)
+                cycif_list = self._image_to_patches(
+                    cycif, patch_size=patch_size
+                )  # list of (C, P, P)
+                cycif_list = [t.to(self.device) for t in cycif_list]
+            else:
+                cycif_list = [None] * batch_size
+
             if include_he_data:
                 he = ds.unimodal_datasets["he"].get_tissue(tid)  # (3, H, W)
                 he_list = self._image_to_patches(
@@ -76,88 +88,36 @@ class VirtuesWrapper:
                 he_list = [None] * batch_size
 
             pss = []
+            intermediate_pss = [[] for _ in range(len(intermediate_layers))]
             max_len = 625
             for i in tqdm(range(0, batch_size, max_len)):
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     # we cant just pass the whole list at once because cuda complains
-                    _, pss_temp = self.encoder.forward_list(
-                        multiplex=tissue_list[i : min(i + max_len, batch_size)],
+                    data = self.encoder.forward_list(
+                        multiplex=cycif_list[i : min(i + max_len, batch_size)],
                         he=he_list[i : min(i + max_len, len(he_list))],
                         channel_ids=channels_list[i : min(i + max_len, batch_size)],
+                        return_intermediates=return_intermediates,
                     )
+                pss_temp = data[1]
                 pss.extend(pss_temp)
+                if return_intermediates:
+                    interm_temp = data[2]
+                    for layer_idx, layer in enumerate(intermediate_layers):
+                        intermediate_pss[layer_idx].extend(interm_temp[layer])
 
             pss = torch.stack(pss).squeeze((1, 2))  # (B, D)
-            self.embeddings[tid] = {
-                "pss": pss.cpu(),
-            }
-
-    def init_masks(
-        self,
-        ds: MultimodalDataset,
-        unimodal_ds: str = "cycif",
-        task="broad_cell_type",
-        resize=True,
-    ):
-        """Initialize masks for all tissues in the dataset."""
-        tissue_ids = ds.unimodal_datasets[unimodal_ds].get_tissue_ids()
-        for tid in tissue_ids:
-            self.masks[tid] = ds.get_cell_mask(tid, task=task, resize=resize)
-
-    @torch.no_grad()
-    def process_batch(
-        self,
-        batch: torch.Tensor,
-        channel_ids: list[torch.Tensor] | torch.Tensor,
-        he_batch: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """
-        Process a batch of tissue tiles using encoder.forward_list by converting the batch
-        into per-sample lists.
-
-        Args:
-            batch: (B, C, P, P)
-            channel_ids: one of:
-                - Tensor of shape (C,) -> broadcast to B
-                - List of length B, each Tensor of shape (C,)
-            he_batch: optional (B, 3, P, P)
-        Returns:
-            pss: (B, P // 8, P // 8, D)
-        """
-        assert batch.ndim == 4, "batch must be (B, C, P, P)"
-        B, C, P, _ = batch.shape
-        if he_batch is not None:
-            assert he_batch.shape[:2] == (B, 3), "he_batch must be (B, 3, P, P)"
-            assert he_batch.shape[-2:] == (P, P), "he_batch patch size mismatch"
-
-        batch = batch.to(self.device, non_blocking=True)
-
-        multiplex_list = [batch[i] for i in range(B)]  # each (C, P, P)
-
-        if he_batch is not None:
-            he_batch = he_batch.to(self.device, non_blocking=True)
-            he_list = [he_batch[i] for i in range(B)]  # each (3, P, P)
-        else:
-            he_list = [None] * B
-
-        # channel_ids has to be a list of length B of (C,) tensors
-        if isinstance(channel_ids, torch.Tensor):
-            assert (
-                channel_ids.ndim == 1 and channel_ids.numel() == C
-            ), "channel_ids tensor must be shape (C,)"
-            base = channel_ids.to(self.device)
-            channel_ids = [base.clone() for _ in range(B)]
-
-        with torch.autocast(device_type="cuda", dtype=self.autocast_dtype):
-            # channel_tokens, pss, channels tokens of final shape (B, C, D)
-            _, pss_list = self.encoder.forward_list(
-                multiplex=multiplex_list,
-                he=he_list,
-                channel_ids=channel_ids,
-            )
-
-        pss = torch.stack(pss_list)
-        return pss
+            if return_intermediates:
+                intermediate_pss = [
+                    torch.stack(interm).squeeze((1, 2)).cpu()
+                    for interm in intermediate_pss
+                ]  # list of (B, D)
+                self.embeddings[tid] = {
+                    "pss": pss.cpu(),
+                    "intermediate_pss": intermediate_pss,
+                }
+            else:
+                self.embeddings[tid] = {"pss": pss.cpu()}
 
     def save_embeddings(self, save_dir: str):
         os.makedirs(save_dir, exist_ok=True)
@@ -166,12 +126,12 @@ class VirtuesWrapper:
 
     def load_embeddings(self, load_dir: str):
         self.embeddings = {}
-        for fname in os.listdir(load_dir):
+        for fname in tqdm(sorted(os.listdir(load_dir))):
             if not fname.endswith(".pth"):
                 continue
             tid = fname[:-4]
             self.embeddings[tid] = torch.load(
-                os.path.join(load_dir, fname), map_location="cpu"
+                os.path.join(load_dir, fname), map_location="cpu", weights_only=True
             )
 
     def _image_to_patches(
