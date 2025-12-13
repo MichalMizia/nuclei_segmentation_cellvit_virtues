@@ -332,3 +332,46 @@ class CombinedLoss(nn.Module):
         ft_loss = self.focal_tversky(logits, targets.long()) * self.ft_weight
 
         return ce_loss + dice_loss + ft_loss
+
+
+def print_class_statistics(loader, model, device, num_classes):
+    with torch.no_grad():
+        pred_class_counts = torch.zeros(num_classes, dtype=torch.long)
+        gt_class_counts = torch.zeros(num_classes, dtype=torch.long)
+
+        all_preds = []
+        all_masks = []
+
+        for batch in loader:
+            pss, mask, he_img, intermediate_pss = batch
+
+            pss = pss.to(device)
+            mask = mask.to(device).long()
+
+            he_img = he_img.to(device)
+            intermediate_pss = [ip.to(device) for ip in intermediate_pss]
+            input = [he_img] + intermediate_pss + [pss]
+
+            outputs = model(input)
+            pred_logits = outputs["nuclei_type_map"]
+
+            # class counts
+            pred_mask = torch.argmax(pred_logits, dim=1)  # (B, H, W)
+            for c in range(num_classes):
+                pred_class_counts[c] += (pred_mask == c).sum().item()
+                gt_class_counts[c] += (mask == c).sum().item()
+
+            all_preds.append(pred_mask.cpu())
+            all_masks.append(mask.cpu())
+
+        all_preds = torch.cat(all_preds, dim=0)
+        all_masks = torch.cat(all_masks, dim=0)
+
+        stats = calculate_per_class_metrics(all_preds, all_masks, num_classes)
+
+        pred_class_counts = pred_class_counts * 100 / pred_class_counts.sum()
+        gt_class_counts = gt_class_counts * 100 / gt_class_counts.sum()
+        for c in range(num_classes):
+            print(
+                f"Class {c}: Pred = {pred_class_counts[c].item():.2f}%, Ground Truth = {gt_class_counts[c].item():.2f}%, Dice = {stats[f'Class_{c}']['dice']:.4f}"
+            )

@@ -4,6 +4,7 @@ import numpy as np
 from einops import rearrange
 from src.dataset.datasets.mm_base import MultimodalDataset
 from tqdm import tqdm
+import torchvision.transforms as T
 
 class EmbeddingsDataset(Dataset):
     def __init__(
@@ -75,17 +76,32 @@ class EmbeddingsDataset(Dataset):
 
 
 class ImageDataset(Dataset):
-    def __init__(self, items: list[str], ds: MultimodalDataset, batches_from_item: int = 1):
+    def __init__(self, items: list[str], ds: MultimodalDataset, batches_from_item: int = 1, resize=None, include_cycif=True, normalize_he=True):
         """items: list of (tissue_id) where pss: (N,D), intermediate_pss: list of (N,D)
         ds: MultimodalDataset, to get cell masks and he images
-        batches_from_item: int, number of batches to split each item into"""
+        batches_from_item: int, number of batches to split each item into
+        resize: tuple (H,W) to resize masks and images to"""
         B = batches_from_item
         self.items = []
 
         for tid in tqdm(items):
             mask = torch.from_numpy(ds.get_cell_mask(tid, task="broad_cell_type", resize=True))
-            he_img = ds.unimodal_datasets["he"].get_tissue(tid) # (3, H, W)
-            cycif_img = ds.unimodal_datasets["cycif"].get_tissue(tid) # (C, H, W)
+            if normalize_he:
+                he_img = ds.unimodal_datasets["he"].get_tissue(tid) # (3, H, W)
+            else:
+                he_img = torch.from_numpy(ds.unimodal_datasets["he"]._get_tissue_all_channels(tid)).float()
+
+            if include_cycif:
+                cycif_img = ds.unimodal_datasets["cycif"].get_tissue(tid) # (C, H, W)
+            else: # zeros for compatibility
+                cycif_img = torch.zeros((1, he_img.shape[1], he_img.shape[2]))
+
+            if resize is not None:
+                transform = T.Resize(resize, interpolation=T.InterpolationMode.NEAREST)
+                mask = transform(mask.unsqueeze(0)).squeeze(0)
+                transform = T.Resize(resize, interpolation=T.InterpolationMode.BILINEAR)
+                he_img = transform(he_img)
+                cycif_img = transform(cycif_img)
             mask_h, mask_w = mask.shape # mask is tensor of shape (H,W)
 
             assert mask_h % B == 0 and mask_w % B == 0, f"mask {mask_h}x{mask_w} not divisible by B={B}"
