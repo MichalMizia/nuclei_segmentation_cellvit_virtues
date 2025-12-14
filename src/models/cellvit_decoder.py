@@ -31,12 +31,14 @@ class CellViTDecoder(nn.Module):
         original_channels: int | None = None,
         upsample_bottleneck: bool = False,
         patch_dropout_rate: float = 0.0,
+        boundary_attention: bool = False,
     ):
         super().__init__()
         self.embed_dim = embed_dim
         self.drop_rate = drop_rate
         self.num_nuclei_classes = num_nuclei_classes
         self.patch_dropout_rate = patch_dropout_rate
+        self.boundary_attention = boundary_attention
         if original_channels is not None:
             self.original_channels = original_channels
         else:
@@ -102,6 +104,13 @@ class CellViTDecoder(nn.Module):
             self.num_nuclei_classes, upsample_bottleneck=upsample_bottleneck
         )
 
+        # Optional auxiliary boundary map branch (1-channel logits)
+        self.boundary_map_decoder = None
+        if self.boundary_attention:
+            self.boundary_map_decoder = self.create_upsampling_branch(
+                1, upsample_bottleneck=upsample_bottleneck
+            )
+
     def forward(self, x: torch.Tensor | list[torch.Tensor]) -> dict:
         """
         Args:
@@ -143,6 +152,15 @@ class CellViTDecoder(nn.Module):
         out_dict["nuclei_type_map"] = self._forward_upsample(
             z0, z1, z2, z3, z4, self.nuclei_type_maps_decoder
         )
+
+        if self.boundary_attention:
+            if self.boundary_map_decoder is None:
+                raise RuntimeError(
+                    "boundary_attention=True but boundary_map_decoder was not initialized"
+                )
+            out_dict["boundary_map"] = self._forward_upsample(
+                z0, z1, z2, z3, z4, self.boundary_map_decoder
+            )
 
         return out_dict
 
