@@ -43,6 +43,7 @@ def train_loop(
     verbose: bool = True,
     boundary_attention: bool = False,
     lambda_boundary: float = 0.05,
+    use_feature_gating: bool = False,
 ):
     """
     Used to train the decoder model.
@@ -84,16 +85,50 @@ def train_loop(
                 input = pss
 
             optimizer.zero_grad()
-            outputs = decoder(input)
-            pred_logits = outputs["nuclei_type_map"]
+            
+            # Phase 3 – Step 1: Two-pass forward with feature gating
+            if use_feature_gating:
+                # First forward: Get initial predictions (no gating)
+                decoder.use_feature_gating = False
+                outputs = decoder(input)
+                pred_logits = outputs["nuclei_type_map"]
+                
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = torch.nn.functional.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                
+                # Build foreground mask (background = 0)
+                with torch.no_grad():
+                    fg_mask = (pred_logits.argmax(1) != 0).float().unsqueeze(1)
+                
+                # Second forward: Apply gating with foreground mask
+                decoder.use_feature_gating = True
+                outputs = decoder(input, fg_mask=fg_mask)
+                pred_logits = outputs["nuclei_type_map"]
+                
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = torch.nn.functional.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+            else:
+                # Standard single-pass forward
+                outputs = decoder(input)
+                pred_logits = outputs["nuclei_type_map"]
 
-            if pred_logits.shape[-2:] != mask.shape[-2:]:
-                pred_logits = torch.nn.functional.interpolate(
-                    pred_logits,
-                    size=mask.shape[-2:],
-                    mode="bilinear",
-                    align_corners=False,
-                )
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = torch.nn.functional.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
 
             seg_loss = criterion(pred_logits, mask)
             if boundary_attention:
@@ -138,6 +173,9 @@ def train_loop(
 
         # --- Validation Phase ---
         decoder.eval()
+        # Ensure gating is disabled during validation
+        if use_feature_gating:
+            decoder.use_feature_gating = False
         val_running_loss = 0.0
         val_running_dice = 0.0
         val_steps = 0

@@ -39,6 +39,7 @@ class CellViTDecoder(nn.Module):
         self.num_nuclei_classes = num_nuclei_classes
         self.patch_dropout_rate = patch_dropout_rate
         self.boundary_attention = boundary_attention
+        self.use_feature_gating = False
         if original_channels is not None:
             self.original_channels = original_channels
         else:
@@ -111,11 +112,12 @@ class CellViTDecoder(nn.Module):
                 1, upsample_bottleneck=upsample_bottleneck
             )
 
-    def forward(self, x: torch.Tensor | list[torch.Tensor]) -> dict:
+    def forward(self, x: torch.Tensor | list[torch.Tensor], fg_mask: torch.Tensor | None = None) -> dict:
         """
         Args:
             x (torch.Tensor): PSS tokens from VirTues. Shape (B, H_patch, W_patch, D)
             or list of tensors for skip connections [he_image, z1, z2, z3, pss]
+            fg_mask (torch.Tensor | None): Foreground mask [B, 1, H, W] for feature gating
 
         Returns:
             dict: Segmentation maps
@@ -150,7 +152,7 @@ class CellViTDecoder(nn.Module):
 
         # Type Map (Cell Classification)
         out_dict["nuclei_type_map"] = self._forward_upsample(
-            z0, z1, z2, z3, z4, self.nuclei_type_maps_decoder
+            z0, z1, z2, z3, z4, self.nuclei_type_maps_decoder, fg_mask=fg_mask
         )
 
         if self.boundary_attention:
@@ -159,7 +161,7 @@ class CellViTDecoder(nn.Module):
                     "boundary_attention=True but boundary_map_decoder was not initialized"
                 )
             out_dict["boundary_map"] = self._forward_upsample(
-                z0, z1, z2, z3, z4, self.boundary_map_decoder
+                z0, z1, z2, z3, z4, self.boundary_map_decoder, fg_mask=fg_mask
             )
 
         return out_dict
@@ -172,6 +174,7 @@ class CellViTDecoder(nn.Module):
         z3: torch.Tensor,
         z4: torch.Tensor,
         branch_decoder,
+        fg_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
         # Bottleneck
@@ -207,6 +210,15 @@ class CellViTDecoder(nn.Module):
             b0 = F.interpolate(
                 b0, size=b1.shape[-2:], mode="bilinear", align_corners=False
             )
+        
+        # Feature Gating: Apply foreground mask to decoder0 features
+        if self.use_feature_gating and fg_mask is not None:
+            # fg_mask: [B, 1, H, W] - ensure it matches b0 spatial dimensions
+            if fg_mask.shape[-2:] != b0.shape[-2:]:
+                fg_mask = F.interpolate(
+                    fg_mask, size=b0.shape[-2:], mode="nearest"
+                )
+            b0 = b0 * fg_mask
 
         branch_output = branch_decoder.decoder0_header(torch.cat([b0, b1], dim=1))
 
