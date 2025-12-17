@@ -102,14 +102,18 @@ print("  Encoder loaded")
 # =========================
 print("\n[3/5] Loading Embeddings...")
 
+from src.models.wrappers.virtues_wrapper import VirtuesWrapper
+wrapper = VirtuesWrapper(encoder=encoder, device="cuda", autocast_dtype=torch.float16)
+
 from_scratch=False
-path = os.path.join("/data", "embeddings", "virtues_sp_only")
+emb_path = os.path.join("/data", "embeddings", "virtues_sp_only")
 if from_scratch:
     # SP Only, include_he_data=False by default
     wrapper.process_dataset(ds[0], return_intermediates=True, intermediate_layers=[4,8,12])
-    wrapper.save_embeddings(path)
+    wrapper.save_embeddings(emb_path)
 else:
-    wrapper.load_embeddings(path)
+    wrapper.load_embeddings(emb_path)
+
 
 print(f"  Loaded {len(wrapper.embeddings)} tissues")
 
