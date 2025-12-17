@@ -96,6 +96,10 @@ def train_loop(
         val_running_dice = 0.0
         val_steps = 0
 
+        pred_class_counts = torch.zeros(num_classes, dtype=torch.long)
+        gt_class_counts = torch.zeros(num_classes, dtype=torch.long)
+        max_pred_probs = []
+        
         with torch.no_grad():
             for batch in test_loader:
                 pss, mask, he_img, intermediate_pss = batch
@@ -127,6 +131,16 @@ def train_loop(
                 dice = calculate_dice_score(pred_mask, mask, num_classes)
                 val_running_dice += dice
 
+                # DEBUG: Collect statistics
+                for c in range(num_classes):
+                    pred_class_counts[c] += (pred_mask == c).sum().cpu()
+                    gt_class_counts[c] += (mask == c).sum().cpu()
+                
+                # Track max probabilities (confidence)
+                probs = torch.softmax(pred_logits, dim=1)
+                max_prob, _ = probs.max(dim=1)
+                max_pred_probs.append(max_prob.mean().cpu().item())
+
                 val_steps += 1
                 del pss, mask, outputs, pred_logits, loss, pred_mask
 
@@ -144,6 +158,24 @@ def train_loop(
             print(
                 f"Epoch {epoch+1}/{num_epochs} | LR: {current_lr:.1e} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Dice: {avg_val_dice:.4f}"
             )
+            
+            # DEBUG: Print prediction distribution
+            total_preds = pred_class_counts.sum().item()
+            total_gt = gt_class_counts.sum().item()
+            avg_confidence = sum(max_pred_probs) / len(max_pred_probs) if max_pred_probs else 0
+            
+            print(f"  Avg Confidence: {avg_confidence:.3f}")
+            print(f"  Prediction Distribution:")
+            for c in range(num_classes):
+                pred_pct = 100 * pred_class_counts[c].item() / total_preds if total_preds > 0 else 0
+                gt_pct = 100 * gt_class_counts[c].item() / total_gt if total_gt > 0 else 0
+                print(f"    Class {c}: Pred={pred_pct:5.2f}% | GT={gt_pct:5.2f}%")
+            
+            # Check for collapse (>50% predictions in one class)
+            dominant_class = pred_class_counts.argmax().item()
+            dominant_pct = 100 * pred_class_counts[dominant_class].item() / total_preds if total_preds > 0 else 0
+            if dominant_pct > 50:
+                print(f"\033[91m  ⚠️  WARNING: Model collapsing to class {dominant_class} ({dominant_pct:.1f}%)\033[0m")
 
         # --- Save Best Model (Based on Dice) ---
         if avg_val_dice > best_val_dice:

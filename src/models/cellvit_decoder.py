@@ -52,16 +52,27 @@ class CellViTDecoder(nn.Module):
             self.bottleneck_dim = 512
 
         # Decoder blocks (Skip connection processing)
-        # Since we reuse the bottleneck features for all skips, the input dim is always embed_dim
-        self.decoder0 = nn.Sequential(
-            Conv2DBlock(
-                self.original_channels,
-                32,
-                3,
-                dropout=self.drop_rate,
-            ),
-            Conv2DBlock(32, 64, 3, dropout=self.drop_rate),
-        )
+        if self.original_channels != self.embed_dim:  # original image as skip conn
+            self.decoder0 = nn.Sequential(
+                Conv2DBlock(
+                    self.original_channels,
+                    32,
+                    3,
+                    dropout=self.drop_rate,
+                ),
+                Conv2DBlock(32, 64, 3, dropout=self.drop_rate),
+            )
+        else:  # embedding features as skip conn
+            self.decoder0 = nn.Sequential(
+                Deconv2DBlock(self.embed_dim, self.skip_dim_11, dropout=self.drop_rate),
+                Deconv2DBlock(
+                    self.skip_dim_11, self.skip_dim_12, dropout=self.drop_rate
+                ),
+                Deconv2DBlock(self.skip_dim_12, 128, dropout=self.drop_rate),
+                Deconv2DBlock(128, 64, dropout=self.drop_rate),
+                Conv2DBlock(64, 64, 3, dropout=self.drop_rate),
+            )
+            
         if upsample_bottleneck:
             self.decoder1 = nn.Sequential(
                 Deconv2DBlock(self.embed_dim, self.skip_dim_11, dropout=self.drop_rate),

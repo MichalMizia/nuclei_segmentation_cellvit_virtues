@@ -89,93 +89,84 @@ class InstanceDecoder(CellViTDecoder):
             z0, z1, z2, z3, z4, self.hv_map_decoder
         )
 
-        # Type Map (Cell Classification)
-        out_dict["nuclei_type_map"] = self._forward_upsample(
-            z0, z1, z2, z3, z4, self.nuclei_type_maps_decoder
-        )
-
         return out_dict
 
-    def calculate_instance_map(
-        self, predictions: OrderedDict, magnification: Literal[20, 40] = 40
-    ) -> tuple[torch.Tensor, list[dict]]:
-        """Calculate Instance Map from network predictions (after Softmax output)
+    # def calculate_instance_map(
+    #     self, predictions: OrderedDict, magnification: Literal[20, 40] = 40
+    # ) -> tuple[torch.Tensor, list[dict]]:
+    #     """Calculate Instance Map from network predictions (after Softmax output)
 
-        Args:
-            predictions (dict): Dictionary with the following required keys:
-                * nuclei_binary_map: Binary Nucleus Predictions. Shape: (B, 2, H, W)
-                * nuclei_type_map: Type prediction of nuclei. Shape: (B, self.num_nuclei_classes, H, W)
-                * hv_map: Horizontal-Vertical nuclei mapping. Shape: (B, 2, H, W)
-            magnification (Literal[20, 40], optional): Which magnification the data has. Defaults to 40.
+    #     Args:
+    #         predictions (dict): Dictionary with the following required keys:
+    #             * nuclei_binary_map: Binary Nucleus Predictions. Shape: (B, 2, H, W)
+    #             * hv_map: Horizontal-Vertical nuclei mapping. Shape: (B, 2, H, W)
+    #         magnification (Literal[20, 40], optional): Which magnification the data has. Defaults to 40.
 
-        Returns:
-            Tuple[torch.Tensor, List[dict]]:
-                * torch.Tensor: Instance map. Each Instance has own integer. Shape: (B, H, W)
-                * List of dictionaries. Each List entry is one image. Each dict contains another dict for each detected nucleus.
-                    For each nucleus, the following information are returned: "bbox", "centroid", "contour", "type_prob", "type"
-        """
-        # reshape to B, H, W, C
-        predictions_ = predictions.copy()
-        predictions_["nuclei_type_map"] = predictions_["nuclei_type_map"].permute(
-            0, 2, 3, 1
-        )
-        predictions_["nuclei_binary_map"] = predictions_["nuclei_binary_map"].permute(
-            0, 2, 3, 1
-        )
-        predictions_["hv_map"] = predictions_["hv_map"].permute(0, 2, 3, 1)
+    #     Returns:
+    #         Tuple[torch.Tensor, List[dict]]:
+    #             * torch.Tensor: Instance map. Each Instance has own integer. Shape: (B, H, W)
+    #             * List of dictionaries. Each List entry is one image. Each dict contains another dict for each detected nucleus.
+    #                 For each nucleus, the following information are returned: "bbox", "centroid", "contour", "type_prob", "type"
+    #     """
+    #     # reshape to B, H, W, C
+    #     predictions_ = predictions.copy()
+    #     predictions_["nuclei_binary_map"] = predictions_["nuclei_binary_map"].permute(
+    #         0, 2, 3, 1
+    #     )
+    #     predictions_["hv_map"] = predictions_["hv_map"].permute(0, 2, 3, 1)
 
-        cell_post_processor = DetectionCellPostProcessor(
-            nr_types=self.num_nuclei_classes, magnification=magnification, gt=False
-        )
-        instance_preds = []
-        type_preds = []
+    #     cell_post_processor = DetectionCellPostProcessor(
+    #         nr_types=self.num_nuclei_classes, magnification=magnification, gt=False
+    #     )
+    #     instance_preds = []
+    #     type_preds = []
 
-        for i in range(predictions_["nuclei_binary_map"].shape[0]):
-            pred_map = np.concatenate(
-                [
-                    torch.argmax(predictions_["nuclei_type_map"], dim=-1)[i]
-                    .detach()
-                    .cpu()[..., None],
-                    torch.argmax(predictions_["nuclei_binary_map"], dim=-1)[i]
-                    .detach()
-                    .cpu()[..., None],
-                    predictions_["hv_map"][i].detach().cpu(),
-                ],
-                axis=-1,
-            )
-            instance_pred = cell_post_processor.post_process_single_image(pred_map)
-            instance_preds.append(instance_pred[0])
-            type_preds.append(instance_pred[1])
+    #     for i in range(predictions_["nuclei_binary_map"].shape[0]):
+    #         pred_map = np.concatenate(
+    #             [
+    #                 torch.argmax(predictions_["nuclei_type_map"], dim=-1)[i]
+    #                 .detach()
+    #                 .cpu()[..., None],
+    #                 torch.argmax(predictions_["nuclei_binary_map"], dim=-1)[i]
+    #                 .detach()
+    #                 .cpu()[..., None],
+    #                 predictions_["hv_map"][i].detach().cpu(),
+    #             ],
+    #             axis=-1,
+    #         )
+    #         instance_pred = cell_post_processor.post_process_single_image(pred_map)
+    #         instance_preds.append(instance_pred[0])
+    #         type_preds.append(instance_pred[1])
 
-        return torch.Tensor(np.stack(instance_preds)), type_preds
+    #     return torch.Tensor(np.stack(instance_preds)), type_preds
 
-    def generate_instance_nuclei_map(
-        self, instance_maps: torch.Tensor, type_preds: list[dict]
-    ) -> torch.Tensor:
-        """Convert instance map (binary) to nuclei type instance map
+    # def generate_instance_nuclei_map(
+    #     self, instance_maps: torch.Tensor, type_preds: list[dict]
+    # ) -> torch.Tensor:
+    #     """Convert instance map (binary) to nuclei type instance map
 
-        Args:
-            instance_maps (torch.Tensor): Binary instance map, each instance has own integer. Shape: (B, H, W)
-            type_preds (List[dict]): List (len=B) of dictionary with instance type information (compare post_process_hovernet function for more details)
+    #     Args:
+    #         instance_maps (torch.Tensor): Binary instance map, each instance has own integer. Shape: (B, H, W)
+    #         type_preds (List[dict]): List (len=B) of dictionary with instance type information (compare post_process_hovernet function for more details)
 
-        Returns:
-            torch.Tensor: Nuclei type instance map. Shape: (B, self.num_nuclei_classes, H, W)
-        """
-        batch_size, h, w = instance_maps.shape
-        instance_type_nuclei_maps = torch.zeros(
-            (batch_size, h, w, self.num_nuclei_classes)
-        )
-        for i in range(batch_size):
-            instance_type_nuclei_map = torch.zeros((h, w, self.num_nuclei_classes))
-            instance_map = instance_maps[i]
-            type_pred = type_preds[i]
-            for nuclei, spec in type_pred.items():
-                nuclei_type = spec["type"]
-                instance_type_nuclei_map[:, :, nuclei_type][
-                    instance_map == nuclei
-                ] = nuclei
+    #     Returns:
+    #         torch.Tensor: Nuclei type instance map. Shape: (B, self.num_nuclei_classes, H, W)
+    #     """
+    #     batch_size, h, w = instance_maps.shape
+    #     instance_type_nuclei_maps = torch.zeros(
+    #         (batch_size, h, w, self.num_nuclei_classes)
+    #     )
+    #     for i in range(batch_size):
+    #         instance_type_nuclei_map = torch.zeros((h, w, self.num_nuclei_classes))
+    #         instance_map = instance_maps[i]
+    #         type_pred = type_preds[i]
+    #         for nuclei, spec in type_pred.items():
+    #             nuclei_type = spec["type"]
+    #             instance_type_nuclei_map[:, :, nuclei_type][
+    #                 instance_map == nuclei
+    #             ] = nuclei
 
-            instance_type_nuclei_maps[i, :, :, :] = instance_type_nuclei_map
+    #         instance_type_nuclei_maps[i, :, :, :] = instance_type_nuclei_map
 
-        instance_type_nuclei_maps = instance_type_nuclei_maps.permute(0, 3, 1, 2)
-        return torch.Tensor(instance_type_nuclei_maps)
+    #     instance_type_nuclei_maps = instance_type_nuclei_maps.permute(0, 3, 1, 2)
+    #     return torch.Tensor(instance_type_nuclei_maps)
