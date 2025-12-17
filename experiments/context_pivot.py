@@ -180,7 +180,7 @@ def create_dataloaders(wrapper, batch_size=128):
 
     return loaders
 
-print(">>> entering train_loop", flush=True)
+
 loaders_sp_he = create_dataloaders(wrapper_sp_he)
 print("  Dataloaders created")
 
@@ -196,8 +196,10 @@ decoder = CellViTDecoder(
     drop_rate=0.3,
     original_channels=19,  # HE (3) + SP (16) = 19
     patch_dropout_rate=0.0,
-    boundary_attention=True,
-    use_feature_gating=True
+    boundary_attention=False,
+    use_feature_gating=False,
+    use_masked_attention=False,
+    use_global_context=True
 )
 decoder.to("cuda")
 initial_state = deepcopy(decoder.state_dict())
@@ -254,8 +256,9 @@ def run_experiment(
         device="cuda",
         save_path=None,
         include_skip_connections=True,
-        boundary_attention=True,
-        use_feature_gating=True,
+        boundary_attention=False,
+        use_feature_gating=False,
+        use_masked_attention=False
     )
 
     best_dice = max(val_dices)
@@ -285,12 +288,12 @@ def run_experiment(
 # ============================================================================
 print("\n" + "=" * 80)
 print("STARTING EXPERIMENTS")
-print("Configuration: SP+HE with Boundary Attention + Feature Gating")
+print("Configuration: Global COntext Pivot")
 print("Folds: 2")
 print("Total experiments: 2")
 print("=" * 80)
 
-description = "SP+HE with Boundary Attention + Feature Gating"
+description = "Global COntext Pivot"
 
 # Run fold 1
 run_experiment(
@@ -315,7 +318,7 @@ run_experiment(
 # ============================================================================
 # 9. Save and Display Results
 # ============================================================================
-output_file = "feature_gating_boundary_experiment_results.pkl"
+output_file = "context_pivot_results.pkl"
 with open(output_file, "wb") as f:
     pkl.dump(all_results, f)
 

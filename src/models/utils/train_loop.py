@@ -44,6 +44,7 @@ def train_loop(
     boundary_attention: bool = False,
     lambda_boundary: float = 0.05,
     use_feature_gating: bool = False,
+    use_masked_attention: bool = False
 ):
     """
     Used to train the decoder model.
@@ -86,44 +87,54 @@ def train_loop(
 
             optimizer.zero_grad()
             
-            # Phase 3 – Step 1: Two-pass forward with feature gating
-            if use_feature_gating:
-                # First forward: Get initial predictions (no gating)
+            use_two_pass = use_feature_gating or decoder.use_masked_attention
+            
+            # Phase 3 – Step 1: Two-pass forward 
+            if use_two_pass:
+             # -------- First pass: baseline prediction --------
                 decoder.use_feature_gating = False
-                outputs = decoder(input)
-                pred_logits = outputs["nuclei_type_map"]
-                
-                if pred_logits.shape[-2:] != mask.shape[-2:]:
-                    pred_logits = torch.nn.functional.interpolate(
-                        pred_logits,
-                        size=mask.shape[-2:],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                
-                # Build foreground mask (background = 0)
-                with torch.no_grad():
-                    fg_mask = (pred_logits.argmax(1) != 0).float().unsqueeze(1)
-                
-                # Second forward: Apply gating with foreground mask
-                decoder.use_feature_gating = True
-                outputs = decoder(input, fg_mask=fg_mask)
-                pred_logits = outputs["nuclei_type_map"]
-                
-                if pred_logits.shape[-2:] != mask.shape[-2:]:
-                    pred_logits = torch.nn.functional.interpolate(
-                        pred_logits,
-                        size=mask.shape[-2:],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-            else:
-                # Standard single-pass forward
+                decoder.use_masked_attention = False
+
                 outputs = decoder(input)
                 pred_logits = outputs["nuclei_type_map"]
 
                 if pred_logits.shape[-2:] != mask.shape[-2:]:
-                    pred_logits = torch.nn.functional.interpolate(
+                    pred_logits = F.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+
+                # Build foreground mask (background = 0)
+                with torch.no_grad():
+                    fg_mask = (pred_logits.argmax(1) != 0).float().unsqueeze(1)
+
+                # -------- Second pass: apply masking --------
+                decoder.use_feature_gating = use_feature_gating
+                decoder.use_masked_attention = decoder.use_masked_attention
+
+                outputs = decoder(input, fg_mask=fg_mask)
+                pred_logits = outputs["nuclei_type_map"]
+
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = F.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+
+            else:
+                # -------- Standard single-pass forward --------
+                decoder.use_feature_gating = False
+                decoder.use_masked_attention = False
+
+                outputs = decoder(input)
+                pred_logits = outputs["nuclei_type_map"]
+
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = F.interpolate(
                         pred_logits,
                         size=mask.shape[-2:],
                         mode="bilinear",
@@ -176,6 +187,7 @@ def train_loop(
         # Ensure gating is disabled during validation
         if use_feature_gating:
             decoder.use_feature_gating = False
+            
         val_running_loss = 0.0
         val_running_dice = 0.0
         val_steps = 0

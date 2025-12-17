@@ -196,7 +196,8 @@ decoder = CellViTDecoder(
     drop_rate=0.3,
     original_channels=19,  # HE (3) + SP (16) = 19
     patch_dropout_rate=0.0,
-    boundary_attention=False
+    boundary_attention=False,
+    use_feature_gating=True
 )
 decoder.to("cuda")
 initial_state = deepcopy(decoder.state_dict())
