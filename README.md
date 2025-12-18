@@ -68,10 +68,11 @@ project-2-gradient_tri_scent/
 │   ├──  Part3_Instance_Segmentation.ipynb        # Training hv and binary map decoder for both virtues and cellvit encoders
 │   └── Part4_cellvit_architectural_variants.ipynb    # Decoder-level architectural extensions to the CellViT
 │
-├── experiments/ # to run, there is a non-interactive script that uses EPFL RCP platform
-│   ├── *.py                # experiment files
-│   ├── *_results.pkl       # experiment results
-│   └── Experiments.ipynb   # visualization of results
+├── experiments/ # non-interactive experiment scripts (EPFL RCP)
+│   ├── Part4_*.py           # decoder-level architectural variants (Part 4)
+│   ├── *.py                 # other experiment files (Parts 1–3)
+│   ├── *_results.pkl        # serialized experiment results
+│   └── Experiments.ipynb    # visualization and comparison of results
 │
 └── scripts # scripts for running the interactive pod and the non-interactive experiments
 
