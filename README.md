@@ -17,8 +17,9 @@ Key highlights:
 - Evaluation of semantic segmentation performance via **Dice scores** and class-wise predictions.
 - Assessment of instance segmentation quality using **binary nuclei maps** and **horizontal-vertical (HV) distance maps**, following the HoVer-Net paradigm.
 - Investigation of how H&E and SP inputs influence the **quality of HV and binary map predictions**, which are critical for separating touching or overlapping nuclei.
+- Analysis of **decoder-level architectural variants**, including boundary supervision, masked self-attention, and global context modeling, isolating their impact on semantic segmentation performance when using frozen Virtues SP embeddings.
 
-The project demonstrates that **Virtues encoders** provide more semantically meaningful features, while H&E images slightly outperform SP data for precise instance segmentation maps due to their structural clarity. Both modalities, however, produce high-quality instance segmentation maps when combined with the appropriate decoder architecture and loss functions.
+The project demonstrates that **Virtues encoders** provide more semantically meaningful features, while H&E images slightly outperform SP data for precise instance segmentation maps due to their structural clarity. Both modalities, however, produce high-quality instance segmentation maps when combined with the appropriate decoder architecture and loss functions.In addition, decoder-level extensions show that boundary supervision provides the most consistent performance gains, while masked self-attention can further improve peak segmentation accuracy at the cost of increased computational overhead.
 
 **Important:** only during the last day of the project we learned from the lab that when passing H&E images through the VirTues encoder, even tough they get passed by all the transformer layers, the encoder was not trained on them so th transformer weights for H&E images are random, and there should be no meaningful difference between passing SP only or SP+H&E modality to the VirTues encoder. This was impossible to know beforehand, and you can probably imagine that this experience was also frustrating for us. In the end, we didn't have time to remove the SP+H&E experiments from notebook Part2_cellvit_virtues_model.ipynb. We hope this mistake gets excused.
 
@@ -42,15 +43,19 @@ project-2-gradient_tri_scent/
 ├── README.md                   # This file
 ├── config.py                   # File with project configs such as paths
 │
-├── src/          # Main package (extended implementation)
+├── src/                        # Main package (extended implementation)
 │   ├── models/
-|   |   ├── wrappers/
-|   |   |   ├── cellvit_wrapper.py    # used to produce precomputed embeddings for the whole DS with CellVit encoder
-|   |   |   └──virtues_wrapper.py    # used to produce precomputed embeddings for the whole DS with VirTues encoder
-|   |   ├── utils/
-|   |   |   └──  # model utilities, to compute class/patch weights, basic model blocks, train loop for decoder
-│   │   ├── cellvit_decoder.py        # adapted cellvit decoder model for semantic multi-class segmentation
-│   │   └── instance_mask_decoder.py  # adapted cellvit decoder model for instance single-class segmentation
+│   │   ├── wrappers/
+│   │   │   ├── cellvit_wrapper.py     # produce precomputed embeddings with CellViT encoder
+│   │   │   └── virtues_wrapper.py     # produce precomputed embeddings with VirTues encoder
+│   │   │
+│   │   ├── utils/
+│   │   │   └──                       # model utilities, training loops, basic blocks
+│   │   │
+│   │   ├── cellvit_decoder.py         # adapted CellViT decoder (semantic segmentation)
+│   │   ├── instance_decoder.py        # decoder for instance segmentation (HV + binary maps)
+│   │   ├── masked_selfattention.py    # masked self-attention module (Part 4)
+│   │   └── global_context_block.py    # global context attention block (Part 4)
 │   │
 │   ├── dataset/datasets/ # mostly classes provided to us by the lab except:
 │   │   ├── embeddings_dataset.py       # 2 pytorch datasets for storing base images, masks etc, with or without precomputed embeddings
