@@ -65,7 +65,8 @@ project-2-gradient_tri_scent/
 ├── notebooks/          # Interactive notebooks
 │   ├── Part1_cellvit_inference.ipynb            # Training cellvit decoder for pretrained cellvit encoder
 │   ├── Part2_cellvit_virtues_model.ipynb        # Training cellvit decoder for virtues encoder, different versions
-│   └── Part3_Instance_Segmentation.ipynb        # Training hv and binary map decoder for both virtues and cellvit encoders
+│   ├──  Part3_Instance_Segmentation.ipynb        # Training hv and binary map decoder for both virtues and cellvit encoders
+│   └── Part4_cellvit_architectural_variants.ipynb    # Decoder-level architectural extensions to the CellViT
 │
 ├── experiments/ # to run, there is a non-interactive script that uses EPFL RCP platform
 │   ├── *.py                # experiment files
@@ -155,7 +156,22 @@ This notebook trains semantic segmentation decoders for the Virtues encoder usin
 
 This notebook evaluates the instance segmentation capabilities of both CellViT and Virtues encoders using horizontal–vertical (HV) distance maps and binary nuclei maps. It trains the same decoder for each encoder to predict HV and binary maps, visualizes ground-truth and predicted outputs for comparison, and computes metrics such as Dice score and HV MSE.
 
+### Part4_cellvit_architectural_variants.ipynb
+
+This notebook investigates decoder-level architectural extensions to the CellViT framework when operating on Spatial Proteomics (SP) embeddings produced by a frozen VirTues encoder. All experiments share the same encoder, data split, and training protocol, and differ only in the decoder architecture.
+
+The following decoder variants are evaluated:
+
+- Baseline SP-only decoder
+- Boundary supervision, using an auxiliary boundary prediction head
+- Masked self-attention, inspired by Masked2Former, applied at the final decoder stage
+- Global context modeling, using self-attention at the decoder bottleneck
+
+The experiments analyze convergence behavior, peak Dice performance, and stability across training epochs, highlighting boundary supervision as the most reliable improvement and masked attention as a higher-capacity but more expensive refinement.
+
+
 ## Experiments
+
 
 ### Data Splitting and Training Protocol
 
@@ -196,6 +212,22 @@ For the first three experiments, each Whole Slide Image (WSI) dataset was partit
 - **Fold 2:** train set = third 25% of all items, test set = last 25%.
 
 Each experiment was run using only the corresponding fold's training and test sets. Models were trained for 30 epochs using the AdamW optimizer with learning rate 5×10⁻⁴ and weight decay 1×10⁻², together with a cosine annealing learning rate scheduler with a minimum learning rate of 10⁻⁶. Only in the augmentation experiment did we aim for full 3-fold cross-validation, as overly small train sets might not work well with data augmentation, and for 50 epochs as perturbations to training images cause the model to converge more slowly.
+
+
+### Part4: CellViT Architectural Variants (Decoder-Level)
+
+
+For Part 4, we evaluate decoder-level architectural variants using a frozen VirTues encoder and SP-only precomputed embeddings. A tissue-level sequential split is used, with 80% of tissues for training and 20% for validation. Models are trained using the AdamW optimizer with a learning rate of 5e-4 and weight decay of 1e-2, together with a cosine annealing warm restart scheduler (T₀ = 20, η_min = 1e-6). Training is run for up to 86 epochs with early stopping patience set to 30 epochs and a batch size of 128. All experiments are executed on a single A100-SXM4-80GB GPU. All Part 4 experiments use identical training settings and differ only in the decoder architecture.
+
+Each decoder configuration is trained independently on a single fixed split. For every run, training loss, validation loss, and validation Dice scores are recorded at each epoch and saved to disk as `.npz` files. The training scripts for Part 4 are located under the `experiments/` directory:
+
+- `experiments/Part4_sp_only.py`
+- `experiments/Part4_sp_boundary_att.py`
+- `experiments/Part4_masked_att.py`
+- `experiments/Part4_global_context.py`
+
+Final results and convergence behavior are analyzed and visualized in the corresponding results notebook.
+
 
 ---
 
