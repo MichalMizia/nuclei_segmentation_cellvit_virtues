@@ -255,7 +255,7 @@ class FlexDualVirTuesEncoder(nn.Module):
     def empty_tensor(self, shape, dtype, device):
         return torch.zeros(0, *shape, dtype=dtype, device=device)
 
-    def forward_list(self, multiplex, he, channel_ids, multiplex_mask=None, he_mask=None, get_router_logits=False):
+    def forward_list(self, multiplex, he, channel_ids, multiplex_mask=None, he_mask=None, get_router_logits=False, return_intermediates=False):
         """
         he: list of tensors 3 x h x w or None of length B
         multiplex: list of tensors C_i x h x w or None of length B
@@ -430,6 +430,9 @@ class FlexDualVirTuesEncoder(nn.Module):
         if self.positional_embedding is not None:
             x = self.positional_embedding(x, pos)
 
+        if return_intermediates:
+            intermediates = []
+
         for layer in self.encoder:
             if mask is None:
                 x = layer.forward_cc(x, pos, x_channels_per_sample, get_router_logits=get_router_logits)
@@ -443,6 +446,9 @@ class FlexDualVirTuesEncoder(nn.Module):
                     if rl is not None: 
                         router_logits.append(rl)
 
+            if return_intermediates:
+                intermediates.append(x.clone()) 
+
         if self.norm_after_encoder_decoder:
             x = self.layer_norm(x)
 
@@ -453,6 +459,18 @@ class FlexDualVirTuesEncoder(nn.Module):
         
         ps = [x_i[0] for x_i in x]
         x = [x_i[1 + self.num_registers:] for x_i in x]
+
+        if return_intermediates:
+            intermediates_reshaped = []
+            for inter in intermediates:
+                inter = rearrange(inter, "c (h w) d -> c h w d", h=H, w=W)
+                inter = torch.split(inter, x_channels_per_sample, dim=0)
+                ps_inter = [inter_i[0] for inter_i in inter]
+                intermediates_reshaped.append(ps_inter)
+            
+            if get_router_logits:
+                return x, ps, router_logits, intermediates_reshaped
+            return x, ps, intermediates_reshaped
 
         if get_router_logits:
             return x, ps, router_logits
