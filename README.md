@@ -1,4 +1,4 @@
-# Cell Instance and Semantic Segmentation using H&E and SP Data - CS-433 Machine Learning Project 2
+# Nuclei Instance and Semantic Segmentation using Spatial Proteomics and H\&E Data - CS-433 Machine Learning Project 2
 
 **Team Members:** Michal Mizia, Jon Kuci, Huaqing Li
 
