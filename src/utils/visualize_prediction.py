@@ -1,59 +1,115 @@
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+import torch
+import matplotlib.pyplot as plt
 
-def visualize_prediction(image_tensor, model_output, channel_idx=0):
+
+
+
+def visualize_single_decoder_prediction(
+    decoder,
+    vis_ds,
+    ds,
+    device,
+    num_classes: int,
+    calculate_dice_score,
+    idx: int = -1,
+    cmap: str = "tab20",
+    figsize=(12, 5),
+):
     """
-    Args:
-        image_tensor: Input image [C, H, W] or [1, C, H, W]
-        model_output: Dictionary from the model forward pass
-        channel_idx: Which channel of the input to show (0 is usually DAPI/Nuclei)
+    Visualize a single prediction from a decoder.
+
+    Parameters
+    ----------
+    decoder : torch.nn.Module
+        Trained decoder model.
+    vis_ds : Dataset
+        EmbeddingsDataset.
+    ds : Dataset
+        Original dataset (used to retrieve full H&E image).
+    device : torch.device
+        CUDA or CPU device.
+    num_classes : int
+        Number of nuclei classes.
+    calculate_dice_score : callable
+        Dice computation function.
+    idx : int, optional
+        Index in vis_ds to visualize. Default -1 (last sample).
+    cmap : str, optional
+        Colormap for segmentation masks.
+    figsize : tuple, optional
+        Matplotlib figure size.
     """
-    # 1. Prepare Input Image for Display
-    # Take first item in batch, select specific channel (DAPI), move to CPU
-    if image_tensor.dim() == 4:
-        img_display = image_tensor[0, channel_idx, :, :].cpu().numpy()
-    else:
-        img_display = image_tensor[channel_idx, :, :].cpu().numpy()
 
-    # 2. Prepare Binary Mask (Cell Detection)
-    # output["nuclei_binary_map"] shape: [1, 2, H, W]
-    # We take argmax to get 0 (background) or 1 (cell)
-    binary_logits = model_output["nuclei_binary_map"]
-    binary_mask = torch.argmax(binary_logits, dim=1)[0].cpu().numpy()
+    decoder.eval()
 
-    # 3. Prepare Cell Type Map (Classification)
-    # output["nuclei_type_map"] shape: [1, NumClasses, H, W]
-    type_logits = model_output["nuclei_type_map"]
-    type_mask = torch.argmax(type_logits, dim=1)[0].cpu().numpy()
+    if idx < 0:
+        idx = len(vis_ds) + idx  # allow -1, -2, ...
 
-    # 4. Plotting
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    
-    # Plot Input (DAPI)
-    axes[0].imshow(img_display, cmap='gray')
-    axes[0].set_title(f"Input Image (Channel {channel_idx})")
-    axes[0].axis('off')
+    with torch.no_grad():
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
 
-    # Plot Binary Prediction
-    axes[1].imshow(binary_mask, cmap='jet', interpolation='nearest')
-    axes[1].set_title("Predicted Binary Mask (Cell vs BG)")
-    axes[1].axis('off')
+        tid, img, mask, pss, intermediate_pss = vis_ds[idx]
 
-    # Plot Type Prediction
-    # We use a distinct colormap to see different cell types
-    axes[2].imshow(type_mask, cmap='tab10', interpolation='nearest')
-    axes[2].set_title("Predicted Cell Types")
-    axes[2].axis('off')
+        img = img.unsqueeze(0).to(device)
+        mask = mask.unsqueeze(0).to(device).long()
+        pss = pss.unsqueeze(0).to(device)
+        intermediate_pss = [
+            ip.unsqueeze(0).to(device) for ip in intermediate_pss
+        ]
 
-    plt.tight_layout()
-    plt.show()
+        decoder_input = [img] + intermediate_pss + [pss]
 
-# --- RUN THE VISUALIZATION ---
-# We assume 'mx_images' is your input list and 'output' is your model result
-# We wrap mx_images in torch.stack if it's a list, to get [B, C, H, W]
-if isinstance(mx_images, list):
-    input_tensor = torch.stack(mx_images)
-else:
-    input_tensor = mx_images
+        outputs = decoder(decoder_input)
+        pred_logits = outputs["nuclei_type_map"]
+        pred_mask = torch.argmax(pred_logits, dim=1)
 
-visualize_prediction(input_tensor, output, channel_idx=0)
+        dice = calculate_dice_score(pred_mask, mask, num_classes)
+
+        # Load full H&E image
+        he_img = ds[0].unimodal_datasets["he"]._get_tissue_all_channels(tid)
+        he_vis = (
+            he_img.transpose(1, 2, 0)
+            if he_img.shape[0] == 3
+            else he_img[0]
+        )
+
+        # Plot
+        axes[0].imshow(he_vis)
+        axes[0].set_title("H&E")
+        axes[0].axis("off")
+
+        axes[1].imshow(
+            mask[0].cpu().numpy(),
+            cmap=cmap,
+            vmin=0,
+            vmax=num_classes - 1,
+        )
+        axes[1].set_title("Ground Truth")
+        axes[1].axis("off")
+
+        axes[2].imshow(
+            pred_mask[0].cpu().numpy(),
+            cmap=cmap,
+            vmin=0,
+            vmax=num_classes - 1,
+        )
+        axes[2].set_title(f"Prediction (Dice: {dice:.3f})")
+        axes[2].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+        # Cleanup
+        del (
+            img,
+            mask,
+            pss,
+            intermediate_pss,
+            decoder_input,
+            outputs,
+            pred_logits,
+            pred_mask,
+        )
+        torch.cuda.empty_cache()
