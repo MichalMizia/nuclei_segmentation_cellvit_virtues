@@ -1,8 +1,29 @@
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from src.models.cellvit_decoder import CellViTDecoder
 from src.utils.metrics import calculate_dice_score
 from tqdm import tqdm
+
+
+def compute_semantic_boundary(mask: torch.Tensor) -> torch.Tensor:
+    """Compute a 4-neighborhood semantic boundary map from an integer mask.
+
+    Args:
+        mask: (B, H, W) integer class map.
+
+    Returns:
+        (B, H, W) bool tensor where True indicates a boundary pixel.
+    """
+    if mask.dim() != 3:
+        raise ValueError(f"Expected mask of shape (B,H,W), got {tuple(mask.shape)}")
+
+    boundary = torch.zeros_like(mask, dtype=torch.bool)
+    boundary[:, 1:, :] |= mask[:, 1:, :] != mask[:, :-1, :]
+    boundary[:, :-1, :] |= mask[:, :-1, :] != mask[:, 1:, :]
+    boundary[:, :, 1:] |= mask[:, :, 1:] != mask[:, :, :-1]
+    boundary[:, :, :-1] |= mask[:, :, :-1] != mask[:, :, 1:]
+    return boundary
 
 
 def train_loop(
@@ -20,6 +41,10 @@ def train_loop(
     include_skip_connections: bool = False,
     use_tqdm: bool = False,
     verbose: bool = True,
+    boundary_attention: bool = False,
+    lambda_boundary: float = 0.05,
+    use_feature_gating: bool = False,
+    use_masked_attention: bool = False
 ):
     """
     Used to train the decoder model.
@@ -61,18 +86,83 @@ def train_loop(
                 input = pss
 
             optimizer.zero_grad()
-            outputs = decoder(input)
-            pred_logits = outputs["nuclei_type_map"]
+            
+            use_two_pass = use_feature_gating or decoder.use_masked_attention
+            
+            # Phase 3 – Step 1: Two-pass forward 
+            if use_two_pass:
+             # -------- First pass: baseline prediction --------
+                decoder.use_feature_gating = False
+                decoder.use_masked_attention = False
 
-            if pred_logits.shape[-2:] != mask.shape[-2:]:
-                pred_logits = torch.nn.functional.interpolate(
-                    pred_logits,
-                    size=mask.shape[-2:],
-                    mode="bilinear",
-                    align_corners=False,
+                outputs = decoder(input)
+                pred_logits = outputs["nuclei_type_map"]
+
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = F.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+
+                # Build foreground mask (background = 0)
+                with torch.no_grad():
+                    fg_mask = (pred_logits.argmax(1) != 0).float().unsqueeze(1)
+
+                # -------- Second pass: apply masking --------
+                decoder.use_feature_gating = use_feature_gating
+                decoder.use_masked_attention = decoder.use_masked_attention
+
+                outputs = decoder(input, fg_mask=fg_mask)
+                pred_logits = outputs["nuclei_type_map"]
+
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = F.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+
+            else:
+                # -------- Standard single-pass forward --------
+                decoder.use_feature_gating = False
+                decoder.use_masked_attention = False
+
+                outputs = decoder(input)
+                pred_logits = outputs["nuclei_type_map"]
+
+                if pred_logits.shape[-2:] != mask.shape[-2:]:
+                    pred_logits = F.interpolate(
+                        pred_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+
+            seg_loss = criterion(pred_logits, mask)
+            if boundary_attention:
+                if "boundary_map" not in outputs:
+                    raise KeyError(
+                        "boundary_attention=True but decoder did not return 'boundary_map'. "
+                        "Instantiate CellViTDecoder(boundary_attention=True) or disable boundary_attention in train_loop."
+                    )
+                boundary_logits = outputs["boundary_map"]
+                if boundary_logits.shape[-2:] != mask.shape[-2:]:
+                    boundary_logits = torch.nn.functional.interpolate(
+                        boundary_logits,
+                        size=mask.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                boundary_target = compute_semantic_boundary(mask).unsqueeze(1).float()
+                boundary_loss = F.binary_cross_entropy_with_logits(
+                    boundary_logits, boundary_target
                 )
-
-            loss = criterion(pred_logits, mask)
+                loss = seg_loss + lambda_boundary * boundary_loss
+            else:
+                loss = seg_loss
             loss.backward()
 
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
@@ -83,7 +173,9 @@ def train_loop(
 
             if include_skip_connections:
                 del he_img, intermediate_pss
-            del mask, outputs, pred_logits, loss, input, pss
+            if boundary_attention:
+                del boundary_logits, boundary_target, boundary_loss
+            del mask, outputs, pred_logits, seg_loss, loss, input, pss
 
             torch.cuda.empty_cache()
 
@@ -92,6 +184,10 @@ def train_loop(
 
         # --- Validation Phase ---
         decoder.eval()
+        # Ensure gating is disabled during validation
+        if use_feature_gating:
+            decoder.use_feature_gating = False
+            
         val_running_loss = 0.0
         val_running_dice = 0.0
         val_steps = 0

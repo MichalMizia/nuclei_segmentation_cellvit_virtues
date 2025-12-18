@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 from src.models.utils.blocks import Conv2DBlock, Deconv2DBlock
+from src.models.masked_selfattention import MaskedSelfAttention
+from src.models.global_context_block import GlobalContextBlock
 
 
 class CellViTDecoder(nn.Module):
@@ -31,12 +33,24 @@ class CellViTDecoder(nn.Module):
         original_channels: int | None = None,
         upsample_bottleneck: bool = False,
         patch_dropout_rate: float = 0.0,
+        boundary_attention: bool = False,
+        use_feature_gating: bool = False,
+        use_masked_attention: bool = False,
+        use_global_context: bool = False
     ):
         super().__init__()
         self.embed_dim = embed_dim
         self.drop_rate = drop_rate
         self.num_nuclei_classes = num_nuclei_classes
         self.patch_dropout_rate = patch_dropout_rate
+        self.boundary_attention = boundary_attention
+        self.use_feature_gating = use_feature_gating
+        self.use_masked_attention = use_masked_attention
+        self.use_global_context = use_global_context
+
+        if self.use_masked_attention:
+            self.masked_attn = MaskedSelfAttention(dim=64) 
+
         if original_channels is not None:
             self.original_channels = original_channels
         else:
@@ -112,12 +126,23 @@ class CellViTDecoder(nn.Module):
         self.nuclei_type_maps_decoder = self.create_upsampling_branch(
             self.num_nuclei_classes, upsample_bottleneck=upsample_bottleneck
         )
+        
+        if self.use_global_context:
+            self.global_context_block = GlobalContextBlock(dim=self.bottleneck_dim)
 
-    def forward(self, x: torch.Tensor | list[torch.Tensor]) -> dict:
+        # Optional auxiliary boundary map branch (1-channel logits)
+        self.boundary_map_decoder = None
+        if self.boundary_attention:
+            self.boundary_map_decoder = self.create_upsampling_branch(
+                1, upsample_bottleneck=upsample_bottleneck
+            )
+
+    def forward(self, x: torch.Tensor | list[torch.Tensor], fg_mask: torch.Tensor | None = None) -> dict:
         """
         Args:
             x (torch.Tensor): PSS tokens from VirTues. Shape (B, H_patch, W_patch, D)
             or list of tensors for skip connections [he_image, z1, z2, z3, pss]
+            fg_mask (torch.Tensor | None): Foreground mask [B, 1, H, W] for feature gating
 
         Returns:
             dict: Segmentation maps
@@ -152,8 +177,17 @@ class CellViTDecoder(nn.Module):
 
         # Type Map (Cell Classification)
         out_dict["nuclei_type_map"] = self._forward_upsample(
-            z0, z1, z2, z3, z4, self.nuclei_type_maps_decoder
+            z0, z1, z2, z3, z4, self.nuclei_type_maps_decoder, fg_mask=fg_mask
         )
+
+        if self.boundary_attention:
+            if self.boundary_map_decoder is None:
+                raise RuntimeError(
+                    "boundary_attention=True but boundary_map_decoder was not initialized"
+                )
+            out_dict["boundary_map"] = self._forward_upsample(
+                z0, z1, z2, z3, z4, self.boundary_map_decoder, fg_mask=fg_mask
+            )
 
         return out_dict
 
@@ -165,10 +199,22 @@ class CellViTDecoder(nn.Module):
         z3: torch.Tensor,
         z4: torch.Tensor,
         branch_decoder,
+        fg_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
         # Bottleneck
+        # z4 is the deepest feature (PSS from encoder)
         b4 = branch_decoder.bottleneck_upsampler(z4)  # z4=pss, z0=he_image
+        
+        
+        
+        # --- NEW INSERTION POINT ---
+        # Apply Global Context here.
+        # Fixing the context here improves b3, b2, b1, and b0 automatically.
+        if self.use_global_context:
+            b4 = self.global_context_block(b4)
+        # ---------------------------     
+        
 
         # Decoder 3
         b3 = self.decoder3(z3)
@@ -200,6 +246,29 @@ class CellViTDecoder(nn.Module):
             b0 = F.interpolate(
                 b0, size=b1.shape[-2:], mode="bilinear", align_corners=False
             )
+        
+        if self.use_masked_attention:
+            print("MASKED ATTENTION ACTIVE")
+            
+                
+        if self.use_feature_gating and self.use_masked_attention:
+            raise ValueError("Choose only one: feature_gating OR masked_attention")
+        
+        
+        
+        # Feature Gating: Apply foreground mask to decoder0 features
+        if self.use_feature_gating and fg_mask is not None:
+            # fg_mask: [B, 1, H, W] - ensure it matches b0 spatial dimensions
+            if fg_mask.shape[-2:] != b0.shape[-2:]:
+                fg_mask = F.interpolate(
+                    fg_mask, size=b0.shape[-2:], mode="nearest"
+                )
+            b0 = b0 * fg_mask
+            
+        # Masked Attention from Masked2Formers
+        if self.use_masked_attention and fg_mask is not None:
+            b0 = b0 + self.masked_attn(b0, fg_mask)
+            
 
         branch_output = branch_decoder.decoder0_header(torch.cat([b0, b1], dim=1))
 
