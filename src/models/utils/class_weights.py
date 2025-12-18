@@ -3,7 +3,7 @@ from src.dataset.datasets.mm_base import MultimodalDataset
 
 
 def compute_class_weights(
-    train_tids, ds: MultimodalDataset, num_classes: int
+    train_tids, ds: MultimodalDataset, num_classes: int, clamp_val=20.0
 ) -> torch.Tensor:
     """
     Compute class weights inversely proportional to class frequencies in the dataset.
@@ -29,6 +29,6 @@ def compute_class_weights(
     class_weights = 1.0 / (class_frequencies + eps)
     class_weights = class_weights / class_weights[0]  # background weight = 1.0
 
-    class_weights = torch.clip(class_weights, max=20.0)
+    class_weights = torch.clip(class_weights, max=clamp_val)
 
     return class_weights

@@ -332,3 +332,159 @@ class CombinedLoss(nn.Module):
         ft_loss = self.focal_tversky(logits, targets.long()) * self.ft_weight
 
         return ce_loss + dice_loss + ft_loss
+
+
+class HVLoss(nn.Module):
+    """
+    HV Map Loss combining MSE and MSGE (Mean Squared Gradient Error).
+    Used in CellVit for instance segmentation.
+
+    L_HV = λ_MSE x MSE + λ_MSGE x MSGE
+
+    Args:
+        mse_weight (float): Weight for MSE loss (default: 1.0)
+        msge_weight (float): Weight for gradient loss (default: 1.0)
+    """
+
+    def __init__(self, mse_weight=1.0, msge_weight=1.0):
+        super().__init__()
+        self.mse_weight = mse_weight
+        self.msge_weight = msge_weight
+
+    def forward(self, pred_hv, gt_hv):
+        """
+        Args:
+            pred_hv (torch.Tensor): Predicted HV map (B, 2, H, W)
+            gt_hv (torch.Tensor): Ground truth HV map (B, 2, H, W)
+            instance_mask (torch.Tensor, optional): Instance mask (B, H, W), 0 = background
+
+        Returns:
+            torch.Tensor: Combined loss
+            dict: Loss components for logging
+        """
+        mse_loss = F.mse_loss(pred_hv, gt_hv)
+
+        # MSGE Loss (Mean Squared Gradient Error)
+        # Horizontal gradients (B, 2, H, W-1)
+        pred_grad_x = pred_hv[:, :, :, 1:] - pred_hv[:, :, :, :-1]
+        gt_grad_x = gt_hv[:, :, :, 1:] - gt_hv[:, :, :, :-1]
+
+        # Vertical gradients (B, 2, H-1, W)
+        pred_grad_y = pred_hv[:, :, 1:, :] - pred_hv[:, :, :-1, :]
+        gt_grad_y = gt_hv[:, :, 1:, :] - gt_hv[:, :, :-1, :]
+
+        grad_loss_x = F.mse_loss(pred_grad_x, gt_grad_x)
+        grad_loss_y = F.mse_loss(pred_grad_y, gt_grad_y)
+
+        msge_loss = grad_loss_x + grad_loss_y
+
+        total_loss = self.mse_weight * mse_loss + self.msge_weight * msge_loss
+
+        return total_loss
+
+
+class InstanceSegLoss(nn.Module):
+    """
+    Combined loss for instance segmentation:
+    - Binary segmentation loss: weighted sum of Focal Tversky and Dice loss
+    - HV map loss: weighted sum of MSE and MSGE
+
+    L_total = λ_bin_ft * FocalTversky + λ_bin_dice * Dice + λ_hv_mse * MSE + λ_hv_msge * MSGE
+
+    Args:
+        num_classes (int): Number of classes for binary segmentation (should be 2)
+        bin_ft_weight (float): Weight for Focal Tversky loss (default: 1.0)
+        bin_dice_weight (float): Weight for Dice loss (default: 1.0)
+        hv_mse_weight (float): Weight for HV MSE loss (default: 1.0)
+        hv_msge_weight (float): Weight for HV MSGE loss (default: 1.0)
+        ft_alpha, ft_beta, ft_gamma: Focal Tversky parameters
+    """
+
+    def __init__(
+        self,
+        num_classes=2,
+        ft_weight=1.0,
+        dice_weight=1.0,
+        hv_mse_weight=1.0,
+        hv_msge_weight=1.0,
+        ft_alpha=0.7,
+        ft_beta=0.3,
+        ft_gamma=1.33,
+        ignore_index=None,
+    ):
+        super().__init__()
+        self.ft_weight = ft_weight
+        self.dice_weight = dice_weight
+        self.hv_mse_weight = hv_mse_weight
+        self.hv_msge_weight = hv_msge_weight
+
+        self.focal_tversky = FocalTverskyLoss(
+            num_classes=num_classes,
+            alpha=ft_alpha,
+            beta=ft_beta,
+            gamma=ft_gamma,
+            ignore_index=ignore_index,
+        )
+        self.dice = DiceLoss(num_classes=num_classes, ignore_index=ignore_index)
+        self.hv_loss = HVLoss(mse_weight=hv_mse_weight, msge_weight=hv_msge_weight)
+
+    def forward(self, binary_logits, binary_targets, hv_pred, hv_gt):
+        """
+        Args:
+            binary_logits (torch.Tensor): (B, 2, H, W) - logits for binary segmentation
+            binary_targets (torch.Tensor): (B, H, W) - ground truth mask (0/1)
+            hv_pred (torch.Tensor): (B, 2, H, W) - predicted HV map
+            hv_gt (torch.Tensor): (B, 2, H, W) - ground truth HV map
+        Returns:
+            torch.Tensor: total loss
+        """
+        bin_ft_loss = self.focal_tversky(binary_logits, binary_targets) * self.ft_weight
+        bin_dice_loss = self.dice(binary_logits, binary_targets) * self.dice_weight
+
+        hv_loss = self.hv_loss(hv_pred, hv_gt)  # already weighted inside HVLoss
+
+        total_loss = bin_ft_loss + bin_dice_loss + hv_loss
+        return total_loss
+
+
+def print_class_statistics(loader, model, device, num_classes):
+    with torch.no_grad():
+        pred_class_counts = torch.zeros(num_classes, dtype=torch.long)
+        gt_class_counts = torch.zeros(num_classes, dtype=torch.long)
+
+        all_preds = []
+        all_masks = []
+
+        for batch in loader:
+            pss, mask, he_img, intermediate_pss = batch
+
+            pss = pss.to(device)
+            mask = mask.to(device).long()
+
+            he_img = he_img.to(device)
+            intermediate_pss = [ip.to(device) for ip in intermediate_pss]
+            input = [he_img] + intermediate_pss + [pss]
+
+            outputs = model(input)
+            pred_logits = outputs["nuclei_type_map"]
+
+            # class counts
+            pred_mask = torch.argmax(pred_logits, dim=1)  # (B, H, W)
+            for c in range(num_classes):
+                pred_class_counts[c] += (pred_mask == c).sum().item()
+                gt_class_counts[c] += (mask == c).sum().item()
+
+            all_preds.append(pred_mask.cpu())
+            all_masks.append(mask.cpu())
+
+        all_preds = torch.cat(all_preds, dim=0)
+        all_masks = torch.cat(all_masks, dim=0)
+
+        stats = calculate_per_class_metrics(all_preds, all_masks, num_classes)
+
+        pred_class_counts = pred_class_counts * 100 / pred_class_counts.sum()
+        gt_class_counts = gt_class_counts * 100 / gt_class_counts.sum()
+        for c in range(num_classes):
+            print(
+                f"Class {c}: Pred = {pred_class_counts[c].item():.2f}%, Ground Truth = {gt_class_counts[c].item():.2f}%, Dice = {stats[f'Class_{c}']['dice']:.4f}, Recall = {stats[f'Class_{c}']['recall']:.4f}"
+            )
