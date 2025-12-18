@@ -40,5 +40,5 @@ data
 
 specification
 
-notebooks/checkpoints/*.pth
-notebooks/*.pth
+notebooks/checkpoints/
+notebooks/
