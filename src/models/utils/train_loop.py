@@ -41,6 +41,7 @@ def train_loop(
     include_skip_connections: bool = False,
     use_tqdm: bool = False,
     verbose: bool = True,
+    debug: bool = False,
     boundary_attention: bool = False,
     lambda_boundary: float = 0.05,
     use_feature_gating: bool = False,
@@ -255,7 +256,7 @@ def train_loop(
                 f"Epoch {epoch+1}/{num_epochs} | LR: {current_lr:.1e} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Dice: {avg_val_dice:.4f}"
             )
             
-            # DEBUG: Print prediction distribution
+        if debug:
             total_preds = pred_class_counts.sum().item()
             total_gt = gt_class_counts.sum().item()
             avg_confidence = sum(max_pred_probs) / len(max_pred_probs) if max_pred_probs else 0
@@ -267,12 +268,6 @@ def train_loop(
                 gt_pct = 100 * gt_class_counts[c].item() / total_gt if total_gt > 0 else 0
                 print(f"    Class {c}: Pred={pred_pct:5.2f}% | GT={gt_pct:5.2f}%")
             
-            # Check for collapse (>50% predictions in one class)
-            dominant_class = pred_class_counts.argmax().item()
-            dominant_pct = 100 * pred_class_counts[dominant_class].item() / total_preds if total_preds > 0 else 0
-            if dominant_pct > 50:
-                print(f"\033[91m  ⚠️  WARNING: Model collapsing to class {dominant_class} ({dominant_pct:.1f}%)\033[0m")
-
         # --- Save Best Model (Based on Dice) ---
         if avg_val_dice > best_val_dice:
             best_val_dice = avg_val_dice
