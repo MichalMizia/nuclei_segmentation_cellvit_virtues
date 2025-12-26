@@ -1,6 +1,12 @@
 # Nuclei Instance and Semantic Segmentation using Spatial Proteomics and H\&E Data - CS-433 Machine Learning Project 2
 
+**École Polytechnique Fédérale de Lausanne**
+
 **Team Members:** Michal Mizia, Jon Kuci, Huaqing Li
+
+**Results:** Go to [REPORT](https://github.com/MichalMizia/nuclei_segmentation_cellvit_virtues/blob/main/report/ml_project_2_report.pdf)
+
+**Important:** Model weights are saved via Git-LFS in ./data/model_checkpoints, dataset files such as cycif images were too big even with Git-LFS.
 
 ## Project Overview
 
@@ -31,8 +37,7 @@ The project demonstrates that **Virtues encoders** provide more semantically mea
 - [Quick Start](#quick-start)
 - [Notebooks](#notebooks)
 - [Experiments](#experiments)
-- [Results](#results)
-- [Report](#report)
+- [Contact](#contact)
 
 ---
 
@@ -237,18 +242,10 @@ Final results and convergence behavior are analyzed and visualized in the corres
 
 ---
 
-## Report
-
-A comprehensive 4-page LaTeX report is available in our [latest release](https://github.com/CS-433/project-2-gradient_tri_scent/releases/latest)
-
-The report covers:
-
 ## Contact
 
 For questions about this implementation:
 
 - Michal MIZIA
-- Jon Kuci
-- Huaqing Li
 
-**GitHub Repository:** https://github.com/CS-433/project-2-gradient_tri_scent
+**GitHub Repository:** https://github.com/MichalMizia/nuclei_segmentation_cellvit_virtues/
